@@ -296,49 +296,49 @@ R_FEATURES = [
     "R_28",
 ]
 
-PARAMS = {
-    "type": "LightGBM",
-    "num_boost_round": 100000,
-    "early_stopping_rounds": 300,
-    "params": {
-        "objective": "binary",
-        "metric": ["auc"],
-        "boosting_type": "dart",  # {gbdt, dart}
-        "learning_rate": 0.01,
-        # "num_leaves": 128,
-        # "min_data_in_leaf": 40,
-        # "reg_alpha": 1.0,
-        # "reg_lambda": 2.0,
-        # "feature_fraction": 0.20,
-        # "bagging_freq": 10,
-        # "bagging_fraction": 0.50,
-        "seed": SEED,
-        "bagging_seed": SEED,
-        "feature_fraction_seed": SEED,
-        "verbose": -1,
-        "n_jobs": -1,
-    },
-}
-
-
 # PARAMS = {
-#     "type": "XGBoost",
+#     "type": "LightGBM",
 #     "num_boost_round": 100000,
-#     "early_stopping_rounds": 500,
+#     "early_stopping_rounds": 300,
 #     "params": {
-#         "objective": "binary:logitraw",
-#         "eval_metric": "auc",
-#         "booster": "gbtree",
+#         "objective": "binary",
+#         "metric": ["auc"],
+#         "boosting_type": "dart",  # {gbdt, dart}
 #         "learning_rate": 0.01,
-#         "max_depth": 4,
-#         "subsample": 0.8,
-#         "colsample_bytree": 0.6,
-#         "tree_method": "gpu_hist",
-#         "predictor": "gpu_predictor",
+#         # "num_leaves": 128,
+#         # "min_data_in_leaf": 40,
+#         # "reg_alpha": 1.0,
+#         # "reg_lambda": 2.0,
+#         # "feature_fraction": 0.20,
+#         # "bagging_freq": 10,
+#         # "bagging_fraction": 0.50,
+#         "seed": SEED,
+#         "bagging_seed": SEED,
+#         "feature_fraction_seed": SEED,
+#         "verbose": -1,
 #         "n_jobs": -1,
-#         "random_state": SEED,
 #     },
 # }
+
+
+PARAMS = {
+    "type": "XGBoost",
+    "num_boost_round": 100000,
+    "early_stopping_rounds": 500,
+    "params": {
+        "objective": "binary:logitraw",
+        "eval_metric": "auc",
+        "booster": "gbtree",
+        "learning_rate": 0.01,
+        "max_depth": 4,
+        "subsample": 0.8,
+        "colsample_bytree": 0.6,
+        "tree_method": "gpu_hist",
+        "predictor": "gpu_predictor",
+        "n_jobs": -1,
+        "random_state": SEED,
+    },
+}
 
 
 # ====================================================
