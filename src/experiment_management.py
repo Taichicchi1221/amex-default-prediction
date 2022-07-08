@@ -14,8 +14,8 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 
-EXPERIMENT_NAME = "exp002"
-EXPERIMENT_DESC = "lightgbm dart"
+EXPERIMENT_NAME = "exp003"
+EXPERIMENT_DESC = "lightgbm dart + regularization"
 
 WORKFILE_NAME = "customer_aggregation_work.py"
 

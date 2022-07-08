@@ -10,6 +10,3 @@ RUN apt install graphviz -y
 COPY requirements.txt . 
 RUN pip install -U pip
 RUN pip install -r requirements.txt
-
-COPY kaggle.json .
-RUN cp kaggle.json -d /root/.kaggle/kaggle.json
