@@ -1,2 +1,4 @@
 input/*
+work/*
+mlruns/*
 kaggle.json
