@@ -756,7 +756,6 @@ def prepare_data():
 
     train_df.sort_index(inplace=True)
     test_df.sort_index(inplace=True)
-    train_labels.sort_values("customer_ID", inplace=True)
 
     print(f"shape of train: {train_df.shape}, shape of test: {test_df.shape}")
 
