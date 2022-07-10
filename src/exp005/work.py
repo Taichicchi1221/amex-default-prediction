@@ -714,12 +714,11 @@ def aggregate_features(df):
     num_features = [col for col in agg_result]
 
     ####
-    # add bins of num_features
-    BIN = 256
-    df = pd.concat([pd.cut(agg_result[col], BIN, labels=False, duplicates="drop") for col in num_features], axis=1)
-    df.columns = [f"{col}-bin{BIN}" for col in num_features]
-    agg_result = pd.concat([agg_result, df], axis=1)
-    num_features.extend(list(df.columns))
+    # add round2 of num_features
+    round_df = agg_result[num_features].round(2).astype(pd.Float32Dtype())
+    round_df.columns = [f"{col}-round2" for col in num_features]
+    agg_result = pd.concat([agg_result, round_df], axis=1)
+    num_features.extend(list(round_df.columns))
     ####
 
     # process nan values
