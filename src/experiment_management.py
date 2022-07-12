@@ -13,11 +13,13 @@ import mlflow
 
 MLFLOW_DIR = "../mlruns"
 MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
-
-EXPERIMENT_NAME = "exp006"
-EXPERIMENT_DESC = "xgboost + binned num features"
+# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 
 WORKFILE_NAME = "customer_aggregation_work.py"
+# WORKFILE_NAME = "sequencial_model_work.py"
+
+EXPERIMENT_NAME = "exp006"
+EXPERIMENT_DESC = "lightgbm dart + binned num features"
 
 # ====================================================
 # util
@@ -105,6 +107,8 @@ def save_results_main():
     run = client.create_run(experiment_id)
 
     # params
+    client.log_param(run.info.run_id, "__EXPERIMENT_NAME__", EXPERIMENT_NAME)
+    client.log_param(run.info.run_id, "__EXPERIMENT_DESC__", EXPERIMENT_DESC)
     for key, value in flatten_dict(results.params).items():
         client.log_param(run.info.run_id, key, value)
 

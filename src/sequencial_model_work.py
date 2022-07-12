@@ -1,6 +1,5 @@
 import os
 import gc
-from pkgutil import get_data
 import re
 import sys
 import copy
@@ -14,6 +13,7 @@ import typing
 import numbers
 import warnings
 import argparse
+import contextlib
 from collections import defaultdict
 from pathlib import Path
 from datetime import datetime
@@ -78,10 +78,10 @@ DEBUG = False
 SEED = 42
 N_SPLITS = 5
 
-
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
 INPUT_INTEGER_PICKLE_DIR = "../input/amex-integer-pickle"
+INPUT_DATA_SEQUENTIAL_DIR = "../input/amex-data-sequeitial"
 
 
 CAT_FEATURES = [
@@ -301,21 +301,21 @@ R_FEATURES = [
 PARAMS = {
     "dataloader": {
         "train": {
-            "batch_size": 32,
+            "batch_size": 512,
             "shuffle": True,
             "drop_last": True,
             "pin_memory": True,
             "num_workers": 2,
         },
         "valid": {
-            "batch_size": 32,
+            "batch_size": 512,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
             "num_workers": 2,
         },
         "test": {
-            "batch_size": 32,
+            "batch_size": 512,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
@@ -323,18 +323,19 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 10,
+        "max_epochs": 15,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
         "accumulate_grad_batches": 1,
-        "precision": 16,
+        "precision": 32,
         "gpus": 1,
     },
     "optimizer": {
-        "cls": torch.optim.Adam,
+        "cls": torch.optim.AdamW,
         "params": {
-            "lr": 1e-03,
+            "lr": 1e-04,
+            "weight_decay": 1e-05,
         },
     },
     "scheduler": {
@@ -354,6 +355,12 @@ PARAMS = {
 }
 
 
+if DEBUG:
+    PARAMS["dataloader"]["train"]["batch_size"] = 32
+    PARAMS["dataloader"]["valid"]["batch_size"] = 32
+    PARAMS["dataloader"]["test"]["batch_size"] = 32
+    PARAMS["trainer"]["max_epochs"] = 3
+
 # ====================================================
 # utils
 # ====================================================
@@ -372,6 +379,24 @@ def seed_everything(seed: int = 42, deterministic: bool = False):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)  # type: ignore
     torch.backends.cudnn.deterministic = deterministic  # type: ignore
+
+
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
 
 
 # ====================================================
@@ -446,113 +471,86 @@ class TorchAmexMetric(torchmetrics.Metric):
         return torch.tensor(score)
 
 
-# ====================================================
-# data processing
-# ====================================================
-def preprocess(df: pd.DataFrame):
-    # customer_ID
-    df["customer_ID"] = pd.Categorical(df["customer_ID"], ordered=True)
-    df.set_index("customer_ID", inplace=True)
+def prepare_data(TYPE="train"):
+    if TYPE == "train":
+        train_ids = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train_ids.npy"), allow_pickle=True)
+        train = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train.npy"), allow_pickle=True)
+        train_labels = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train_labels.npy"), allow_pickle=True)
+        np.save("train_ids.npy", train_ids)
+        np.save("train_labels.npy", train_labels)
+        np.save("train.npy", train)
 
-    # S_2
-    df["S_2"] = pd.to_datetime(df["S_2"], format="%Y-%m-%d")
+        num_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "num_features.pkl"))
+        cat_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "cat_features.pkl"))
+        joblib.dump(num_features, "num_features.pkl")
+        joblib.dump(cat_features, "cat_features.pkl")
 
+        if DEBUG:
+            train_ids = train_ids[:1000]
+            train = train[:1000]
+            train_labels = train_labels[:1000]
+        gc.collect()
 
-def make_features(train, test):
-    train_customer_ids = list(train.index.unique())
-    test_customer_ids = list(test.index.unique())
+        return train_ids, train, train_labels, num_features, cat_features
 
-    cat_features = CAT_FEATURES.copy()
+    elif TYPE == "public":
+        test_ids = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "public_ids.npy"), allow_pickle=True)
+        test = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "public.npy"), allow_pickle=True)
+        np.save("public_ids.npy", test_ids)
+        np.save("public.npy", test)
 
-    df = pd.concat([train, test], axis=0)
-    del train, test
-    gc.collect()
+        num_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "num_features.pkl"))
+        cat_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "cat_features.pkl"))
+        joblib.dump(num_features, "num_features.pkl")
+        joblib.dump(cat_features, "cat_features.pkl")
 
-    # date features
-    cols = ["month", "weekday", "day"]
-    date_df = pd.concat(
-        [
-            df["S_2"].dt.month.astype("int16"),
-            df["S_2"].dt.weekday.astype("int16"),
-            df["S_2"].dt.day.astype("int16"),
-        ],
-        axis=1,
-    )
-    date_df.columns = cols
-    df = pd.concat([df, date_df], axis=1)
-    cat_features.extend(cols)
+        if DEBUG:
+            test_ids = test_ids[:1000]
+            test = test[:1000]
+        gc.collect()
 
-    # drop columns
-    df.drop(columns="S_2", inplace=True)
+        return test_ids, test, num_features, cat_features
 
-    num_features = [col for col in df.columns if col not in cat_features]
+    elif TYPE == "private":
+        test_ids = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "private_ids.npy"), allow_pickle=True)
+        test = np.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "private.npy"), allow_pickle=True)
+        np.save("private_ids.npy", test_ids)
+        np.save("private.npy", test)
 
-    # fillna
-    imputer = SimpleImputer(strategy="mean")
-    num_df = pd.DataFrame(imputer.fit_transform(df[num_features]), columns=num_features, index=df.index)
+        num_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "num_features.pkl"))
+        cat_features = joblib.load(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "cat_features.pkl"))
+        joblib.dump(num_features, "num_features.pkl")
+        joblib.dump(cat_features, "cat_features.pkl")
 
-    # dummies
-    cat_dummies_df = pd.get_dummies(df[cat_features].astype("str"))
-    cat_features = list(cat_dummies_df.columns)
+        if DEBUG:
+            test_ids = test_ids[:1000]
+            test = test[:1000]
+        gc.collect()
 
-    # concat
-    df = pd.concat([num_df, cat_dummies_df], axis=1)
+        return test_ids, test, num_features, cat_features
 
-    return df.loc[train_customer_ids], df.loc[test_customer_ids], num_features, cat_features
-
-
-def prepare_data():
-    train_df = pd.read_pickle(Path(INPUT_PICKLE_DIR, "train.pkl"))
-    test_df = pd.read_pickle(Path(INPUT_PICKLE_DIR, "test.pkl"))
-    train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"))
-
-    if DEBUG:
-        train_sample_ids = pd.Series(train_df["customer_ID"].unique()).sample(1000)
-        train_df = train_df.loc[train_df["customer_ID"].isin(train_sample_ids)].reset_index(drop=True)
-        train_labels = train_labels.loc[train_labels["customer_ID"].isin(train_sample_ids)].reset_index(drop=True)
-        test_sample_ids = pd.Series(test_df["customer_ID"].unique()).sample(1000)
-        test_df = test_df.loc[test_df["customer_ID"].isin(test_sample_ids)].reset_index(drop=True)
-
-    # preprocessing
-    preprocess(train_df)
-    preprocess(test_df)
-    train_labels["customer_ID"] = pd.Categorical(train_labels["customer_ID"], ordered=True)
-
-    # features
-    train, test, num_features, cat_features = make_features(train_df, test_df)
-
-    train.sort_index(inplace=True)
-    test.sort_index(inplace=True)
-    train_labels = train_labels.set_index("customer_ID").sort_index()
-
-    print(f"shape of train: {len(train)}, shape of test: {len(test)}")
-
-    return train, test, train_labels, num_features, cat_features
+    raise NotImplementedError("TYPE must be one of (train, public, private)")
 
 
 # ====================================================
 # dataset, dataloader
 # ====================================================
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, df, labels=None) -> None:
+    def __init__(self, data, labels=None) -> None:
         super().__init__()
-        self.ids = df.index.unique()
-        self.df = df
+        self.data = data
         self.labels = labels
 
     def __len__(self):
-        return len(self.ids)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        x = self.df.loc[[self.ids[idx]]].to_numpy()
-        l = len(x)
-
-        x = torch.tensor(np.pad(x, ((13 - l, 0), (0, 0))), dtype=torch.float)
+        x = torch.tensor(self.data[idx], dtype=torch.float)
 
         if self.labels is None:
             return x
 
-        y = torch.tensor(self.labels.loc[self.ids[idx]], dtype=torch.float)
+        y = torch.tensor(self.labels[idx], dtype=torch.float)
         return x, y
 
 
@@ -584,7 +582,7 @@ def get_loss(cls_, params):
 class Model(pl.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
-        self.model = BaseModel(input_dim)
+        self.model = BaseModelGRU(input_dim)
 
         self.criterion = get_loss(PARAMS["loss"]["cls"], PARAMS["loss"]["params"])
 
@@ -625,7 +623,16 @@ class Model(pl.LightningModule):
         x, y = train_batch
         yhat = self(x)
         loss = self.criterion(yhat, y)
-        self.train_metric(yhat, y)
+        self.log(
+            name="train_loss",
+            value=loss.item(),
+            prog_bar=True,
+            logger=False,
+            on_step=False,
+            on_epoch=True,
+            rank_zero_only=True,
+        )
+        self.train_metric(yhat, y.long())
         self.log(
             name="train_metric",
             value=self.train_metric,
@@ -641,7 +648,16 @@ class Model(pl.LightningModule):
         x, y = val_batch
         yhat = self(x)
         loss = self.criterion(yhat, y)
-        self.valid_metric(yhat, y.squeeze(-1).long())
+        self.log(
+            name="valid_loss",
+            value=loss.item(),
+            prog_bar=True,
+            logger=False,
+            on_step=False,
+            on_epoch=True,
+            rank_zero_only=True,
+        )
+        self.valid_metric(yhat, y.long())
         self.log(
             name="valid_metric",
             value=self.valid_metric,
@@ -662,30 +678,97 @@ class Model(pl.LightningModule):
         return super().on_validation_epoch_end()
 
 
-class BaseModel(torch.nn.Module):
+class BaseModelGRU(torch.nn.Module):
     def __init__(self, input_dim):
         super().__init__()
         self.input_dim = input_dim
+        hidden_size = 256
+        num_layers = 2
+        bidirectional = True
         self.encoder = nn.GRU(
             input_size=input_dim,
-            hidden_size=256,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bidirectional=bidirectional,
             batch_first=True,
-            bidirectional=True,
-            num_layers=8,
         )
-        self.hidden = nn.Sequential(
-            nn.Linear(256, 64),
+
+        output_dim = hidden_size * (2 if bidirectional else 1)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(output_dim, 256),
+            nn.LayerNorm(256),
+            nn.Dropout(0.25),
             nn.SiLU(),
-            nn.Linear(64, 32),
-            nn.SiLU(),
+            nn.Linear(256, 1),
         )
-        self.classifier = nn.Linear(32, 1)
 
     def forward(self, x):
-        _, h = self.encoder(x)
-        h = h.mean(0)
-        h = self.hidden(h)
-        return self.classifier(h).view(-1)
+        output, _ = self.encoder(x)
+        output = self.classifier(output[:, -1, :])
+        return output.view(-1)
+
+
+class BaseModelLSTM(torch.nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        hidden_size = 256
+        num_layers = 2
+        bidirectional = True
+        self.encoder = nn.LSTM(
+            input_size=input_dim,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+            batch_first=True,
+        )
+
+        output_dim = hidden_size * (2 if bidirectional else 1)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(output_dim, 256),
+            nn.LayerNorm(256),
+            nn.Dropout(0.25),
+            nn.SiLU(),
+            nn.Linear(256, 1),
+        )
+
+    def forward(self, x):
+        output, _ = self.encoder(x)
+        output = self.classifier(output[:, -1, :])
+        return output.view(-1)
+
+
+class BaseModelTransformer(torch.nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.linear = nn.Linear(input_dim, 512)
+        self.encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=512,
+                nhead=8,
+                dropout=0.25,
+                activation=F.gelu,
+                batch_first=True,
+            ),
+            num_layers=2,
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.Dropout(0.25),
+            nn.SiLU(),
+            nn.Linear(256, 1),
+        )
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.encoder(x)[:, -1, :]
+        output = self.classifier(x)
+        return output.view(-1)
 
 
 # ====================================================
@@ -715,7 +798,7 @@ def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_featu
         **PARAMS["trainer"],
     )
 
-    model = Model(input_dim=X_train.shape[1])
+    model = Model(input_dim=X_train.shape[-1])
 
     trainer.fit(
         model,
@@ -744,25 +827,29 @@ def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_featu
 # ====================================================
 # inference
 # ====================================================
-def inference(X_test, model_path):
-    model = Model.load_from_checkpoint(model_path, input_dim=X_test.shape[1])
+def inference(customer_ids, X, model_path):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    model = Model.load_from_checkpoint(model_path, input_dim=X.shape[-1])
     model.freeze()
     model.eval()
+    model.to(device)
 
-    ds = Dataset(X_test, labels=None)
+    ds = Dataset(X, labels=None)
     dl = get_dataloader(ds, type_="test")
 
     predictions_list = []
 
-    for batch in tqdm(dl, desc="inference", total=len(dl)):
-        logits = model(batch)
+    for x in tqdm(dl, desc="inference", total=len(dl)):
+        x = x.to(device)
+        logits = model(x)
         predictions_list.append(logits.detach().cpu().numpy())
 
     prediction = np.concatenate(predictions_list, axis=0)
 
     prediction_df = pd.DataFrame()
-    prediction_df["customer_ID"] = ds.ids
-    prediction_df["target"] = prediction
+    prediction_df["customer_ID"] = customer_ids
+    prediction_df["prediction"] = prediction
 
     return prediction_df
 
@@ -770,38 +857,90 @@ def inference(X_test, model_path):
 # ====================================================
 # main
 # ====================================================
-def main():
-    train, test, train_labels, num_features, cat_features = prepare_data()
+def training_main():
+    train_ids, train, train_labels, num_features, cat_features = prepare_data(TYPE="train")
 
     oof_df = pd.DataFrame()
-    sub_df = pd.DataFrame()
     model_paths = []
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
 
-    for fold, (train_idx, valid_idx) in enumerate(skf.split(train_labels, train_labels["target"])):
-        train_customer_ids = train_labels.index[train_idx]
-        valid_customer_ids = train_labels.index[valid_idx]
-        X_train = train.loc[train_customer_ids]
-        X_valid = train.loc[valid_customer_ids]
-        y_train = train_labels.loc[train_customer_ids]["target"]
-        y_valid = train_labels.loc[valid_customer_ids]["target"]
+    for fold, (train_idx, valid_idx) in enumerate(skf.split(train_ids, train_labels)):
+        train_customer_ids = train_ids[train_idx]
+        valid_customer_ids = train_ids[valid_idx]
+        X_train = train[train_idx]
+        X_valid = train[valid_idx]
+        y_train = train_labels[train_idx]
+        y_valid = train_labels[valid_idx]
 
         model_path = train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_features)
         model_paths.append(model_path)
 
-        oof = inference(X_valid, model_path)
+        oof = inference(valid_customer_ids, X_valid, model_path)
         oof_df = oof_df.append(oof, ignore_index=True)
 
-        sub = inference(test, model_path)
-        sub_df = sub_df.append(sub, ignore_index=True)
-
-    oof_df = oof_df.groupby("customer_ID")["target"].mean().reset_index().sort_values("customer_ID")
-    sub_df = sub_df.groupby("customer_ID")["target"].mean().reset_index().sort_values("customer_ID")
-
+    oof_df = oof_df.groupby("customer_ID")["prediction"].mean().reset_index().sort_values("customer_ID")
+    oof_score = amex_metric(train_labels, oof_df["prediction"].to_numpy())
     oof_df.to_csv("oof.csv", index=False)
-    oof_df.to_csv("submission.csv", index=False)
+    print(f"oof score: {oof_score:.4f}")
+
+    return oof_score, model_paths
+
+
+def inference_main(model_paths):
+
+    ## public
+    print("#" * 30, "public", "#" * 30)
+    public_ids, public, num_features, cat_features = prepare_data(TYPE="public")
+
+    public_df = pd.DataFrame()
+    for model_path in model_paths:
+        print("#" * 5, model_path)
+        preds_df = inference(public_ids, public, model_path)
+        public_df = public_df.append(preds_df, ignore_index=True)
+
+    public_df = public_df.groupby("customer_ID")["prediction"].mean().reset_index().sort_values("customer_ID")
+
+    del public_ids, public
+    gc.collect()
+
+    ## private
+    print("#" * 30, "private", "#" * 30)
+    private_ids, private, num_features, cat_features = prepare_data(TYPE="private")
+
+    private_df = pd.DataFrame()
+    for model_path in model_paths:
+        print("#" * 5, model_path)
+        preds_df = inference(private_ids, private, model_path)
+        private_df = private_df.append(preds_df, ignore_index=True)
+
+    private_df = private_df.groupby("customer_ID")["prediction"].mean().reset_index().sort_values("customer_ID")
+
+    del private_ids, private
+    gc.collect()
+
+    ## make submission file
+    sub_df = pd.concat([public_df, private_df], axis=0, ignore_index=True)
+    sub_df.sort_values("customer_ID", inplace=True)
+    sub_df.to_csv("submission.csv", index=False)
+
+
+def main():
+    oof_score, model_paths = training_main()
+    inference_main(model_paths)
+
+    return Box(
+        {
+            "params": PARAMS,
+            "metrics": {
+                "valid_score": oof_score,
+                "public_score": np.nan,
+                "private_score": np.nan,
+            },
+        }
+    )
 
 
 if __name__ == "__main__":
     os.chdir("../work")
-    main()
+    results = main()
+    joblib.dump(results, "results.pkl")

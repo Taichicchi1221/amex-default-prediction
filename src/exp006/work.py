@@ -713,6 +713,15 @@ def aggregate_features(df):
     cat_features = [f"{col}-last" for col in cat_columns]
     num_features = [col for col in agg_result]
 
+    ####
+    # add bins of num_features
+    BIN = 64
+    df = pd.concat([pd.cut(agg_result[col], BIN, labels=False, duplicates="drop") for col in num_features], axis=1)
+    df.columns = [f"{col}-bin{BIN}" for col in num_features]
+    agg_result = pd.concat([agg_result, df], axis=1)
+    num_features.extend(list(df.columns))
+    ####
+
     # process nan values
     for col in cat_features:
         m = agg_result[col].max()
