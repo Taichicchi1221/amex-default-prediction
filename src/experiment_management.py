@@ -12,14 +12,20 @@ import mlflow
 
 
 MLFLOW_DIR = "../mlruns"
-MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
-# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 
+########################## customer aggregation ##########################
 WORKFILE_NAME = "customer_aggregation_work.py"
-# WORKFILE_NAME = "sequencial_model_work.py"
+MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+########################## customer aggregation ##########################
 
-EXPERIMENT_NAME = "exp006"
-EXPERIMENT_DESC = "lightgbm dart + binned num features"
+
+########################## sequential model ##########################
+# WORKFILE_NAME = "sequencial_model_work.py"
+# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+########################## sequential model ##########################
+
+EXPERIMENT_NAME = "exp007"
+EXPERIMENT_DESC = "lgbmdart + add features"
 
 # ====================================================
 # util
