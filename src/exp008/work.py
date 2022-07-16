@@ -842,8 +842,8 @@ def fill_nan_values(df, num_features, cat_features):
 
 
 def prepare_data():
-    train_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
-    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
+    train_df = pd.read_pickle(Path(INPUT_PICKLE_DIR, "train.pkl"))
+    test_df = pd.read_pickle(Path(INPUT_PICKLE_DIR, "test.pkl"))
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"))
 
     if DEBUG:
