@@ -115,7 +115,7 @@ def make_features(train, test):
     print(f"process num features: {time.perf_counter() - START_TIME:.2f} seconds")
 
     # dummies
-    df = pd.get_dummies(df, columns=cat_features, drop_first=True)
+    df = pd.get_dummies(df, columns=cat_features, drop_first=False, dummy_na=True)
     cat_features = [col for col in df.columns if col not in num_features]
 
     print(f"process cat features: {time.perf_counter() - START_TIME:.2f} seconds")
@@ -170,9 +170,9 @@ def prepare_data():
         train = np.stack([reshape_pad(g.to_numpy()) for _, g in tqdm(train_groups)], axis=0)
 
         if not DEBUG:
+            np.save(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train.npy"), train)
             np.save(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train_ids.npy"), train_ids)
             np.save(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train_labels.npy"), train_labels)
-            np.save(os.path.join(INPUT_DATA_SEQUENTIAL_DIR, "train.npy"), train)
         del train
         gc.collect()
 

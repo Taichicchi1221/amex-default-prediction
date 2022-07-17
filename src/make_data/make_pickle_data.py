@@ -202,8 +202,26 @@ DTYPES = {
 }
 
 
+def convert_dtypes(df):
+    for col in tqdm(df.columns):
+        if pd.api.types.is_float_dtype(df[col]):
+            df[col] = df[col].astype(pd.Float32Dtype())
+        if pd.api.types.is_integer_dtype(df[col]):
+            df[col] = df[col].replace(-1, pd.NA).astype(pd.Int16Dtype())
+        if pd.api.types.is_object_dtype(df[col]):
+            df[col] = df[col].astype(pd.StringDtype())
+
+
 def main():
-    df = pd.read_csv(f"../input/amex-default-prediction/{TYPE}_data.csv", dtype=DTYPES).convert_dtypes()
+    df = pd.read_csv(f"../input/amex-default-prediction/{TYPE}_data.csv", dtype=DTYPES)
+
+    # D_63
+    df["D_63"] = df["D_63"].apply(lambda t: {"CR": 0, "XZ": 1, "XM": 2, "CO": 3, "CL": 4, "XL": 5}[t])
+
+    # D_64
+    df["D_64"] = df["D_64"].apply(lambda t: {np.nan: np.nan, "O": 0, "-1": 1, "R": 2, "U": 3}[t])
+
+    df = df.convert_dtypes()
 
     # convert integer dtypes
     for col in df.columns:
@@ -214,4 +232,5 @@ def main():
 
 
 if __name__ == "__main__":
+    os.chdir("../../work")
     main()

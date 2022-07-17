@@ -74,7 +74,7 @@ tqdm.pandas()
 # ====================================================
 # config
 # ====================================================
-DEBUG = True
+DEBUG = False
 
 SEED = 42
 N_SPLITS = 5
@@ -798,19 +798,20 @@ def aggregate_features(df):
 def make_features(df, num_features, cat_features):
     trace = Trace()
 
-    idx = df.index
-    colnames = []
-    feature_values = []
-
     # round2 of last num features
     with trace.timer("make round2 features"):
+        idx = df.index
+        colnames = []
+        feature_values = []
         for col in num_features:
-            if col.endswith("-last") or col.endswith("-last_diff"):
+            if col.endswith("-last"):
                 colnames.append(f"{col}-round2")
                 feature_values.append(np.round(df[col], 2))
 
     # the difference between last and mean
     with trace.timer("make difference features"):
+        colnames = []
+        feature_values = []
         for col in num_features:
             if col.endswith("-last"):
                 col_base = col.split("-")[0]

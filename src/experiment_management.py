@@ -24,7 +24,7 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 # MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## sequential model ##########################
 
-EXPERIMENT_NAME = "exp010"
+EXPERIMENT_NAME = "exp012"
 EXPERIMENT_DESC = "lgbmdart + integer data + add features"
 
 # ====================================================
