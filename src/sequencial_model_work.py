@@ -300,6 +300,27 @@ R_FEATURES = [
 
 
 PARAMS = {
+    "model": {
+        "type": "Transformer",
+        "params": {
+            "encoder_num_layers": 1,
+            "encoder_hidden_size": 512,
+            "encoder_dropout": 0.25,
+            "encoder_nhead": 8,  # transformer
+            # "encoder_bidirectional": False,  # LSTM, GRU
+            "classifier_hidden_size": 256,
+            "classifier_dropout": 0.25,
+        },
+    },
+    "trainer": {
+        "max_epochs": 30,
+        "benchmark": False,
+        "deterministic": True,
+        "num_sanity_val_steps": 0,
+        "accumulate_grad_batches": 1,
+        "precision": 32,
+        "gpus": 1,
+    },
     "dataloader": {
         "train": {
             "batch_size": 512,
@@ -313,29 +334,20 @@ PARAMS = {
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
-            "num_workers": 2,
+            "num_workers": 0,
         },
         "test": {
             "batch_size": 512,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
-            "num_workers": 2,
+            "num_workers": 0,
         },
-    },
-    "trainer": {
-        "max_epochs": 15,
-        "benchmark": False,
-        "deterministic": True,
-        "num_sanity_val_steps": 0,
-        "accumulate_grad_batches": 1,
-        "precision": 32,
-        "gpus": 1,
     },
     "optimizer": {
         "cls": torch.optim.AdamW,
         "params": {
-            "lr": 1e-04,
+            "lr": 1e-03,
             "weight_decay": 1e-05,
         },
     },
@@ -655,7 +667,10 @@ def get_loss(cls_, params):
 class Model(pl.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
-        self.model = BaseModelGRU(input_dim)
+        self.model = eval(f"BaseModel{PARAMS['model']['type']}")(
+            input_dim,
+            **PARAMS["model"]["params"],
+        )
 
         self.criterion = get_loss(PARAMS["loss"]["cls"], PARAMS["loss"]["params"])
 
@@ -752,28 +767,35 @@ class Model(pl.LightningModule):
 
 
 class BaseModelGRU(torch.nn.Module):
-    def __init__(self, input_dim):
+    def __init__(
+        self,
+        input_dim,
+        encoder_num_layers,
+        encoder_hidden_size,
+        encoder_dropout,
+        encoder_bidirectional,
+        classifier_hidden_size,
+        classifier_dropout,
+    ):
         super().__init__()
         self.input_dim = input_dim
-        hidden_size = 256
-        num_layers = 2
-        bidirectional = True
         self.encoder = nn.GRU(
             input_size=input_dim,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            bidirectional=bidirectional,
+            hidden_size=encoder_hidden_size,
+            num_layers=encoder_num_layers,
+            bidirectional=encoder_bidirectional,
+            dropout=encoder_dropout,
             batch_first=True,
         )
 
-        output_dim = hidden_size * (2 if bidirectional else 1)
+        output_dim = encoder_hidden_size * (2 if encoder_bidirectional else 1)
 
         self.classifier = nn.Sequential(
-            nn.Linear(output_dim, 256),
-            nn.LayerNorm(256),
-            nn.Dropout(0.25),
+            nn.Linear(output_dim, classifier_hidden_size),
+            nn.BatchNorm1d(classifier_hidden_size),
+            nn.Dropout(classifier_dropout),
             nn.SiLU(),
-            nn.Linear(256, 1),
+            nn.Linear(classifier_hidden_size, 1),
         )
 
     def forward(self, x):
@@ -783,28 +805,35 @@ class BaseModelGRU(torch.nn.Module):
 
 
 class BaseModelLSTM(torch.nn.Module):
-    def __init__(self, input_dim):
+    def __init__(
+        self,
+        input_dim,
+        encoder_num_layers,
+        encoder_hidden_size,
+        encoder_dropout,
+        encoder_bidirectional,
+        classifier_hidden_size,
+        classifier_dropout,
+    ):
         super().__init__()
         self.input_dim = input_dim
-        hidden_size = 256
-        num_layers = 2
-        bidirectional = True
         self.encoder = nn.LSTM(
             input_size=input_dim,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            bidirectional=bidirectional,
+            hidden_size=encoder_hidden_size,
+            num_layers=encoder_num_layers,
+            bidirectional=encoder_bidirectional,
+            dropout=encoder_dropout,
             batch_first=True,
         )
 
-        output_dim = hidden_size * (2 if bidirectional else 1)
+        output_dim = encoder_hidden_size * (2 if encoder_bidirectional else 1)
 
         self.classifier = nn.Sequential(
-            nn.Linear(output_dim, 256),
-            nn.LayerNorm(256),
-            nn.Dropout(0.25),
+            nn.Linear(output_dim, classifier_hidden_size),
+            nn.BatchNorm1d(classifier_hidden_size),
+            nn.Dropout(classifier_dropout),
             nn.SiLU(),
-            nn.Linear(256, 1),
+            nn.Linear(classifier_hidden_size, 1),
         )
 
     def forward(self, x):
@@ -813,28 +842,63 @@ class BaseModelLSTM(torch.nn.Module):
         return output.view(-1)
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor, shape [seq_len, batch_size, embedding_dim]
+        """
+        x = x + self.pe[: x.size(0)]
+        return self.dropout(x)
+
+
 class BaseModelTransformer(torch.nn.Module):
-    def __init__(self, input_dim):
+    def __init__(
+        self,
+        input_dim,
+        encoder_num_layers,
+        encoder_hidden_size,
+        encoder_nhead,
+        encoder_dropout,
+        classifier_hidden_size,
+        classifier_dropout,
+    ):
         super().__init__()
         self.input_dim = input_dim
-        self.linear = nn.Linear(input_dim, 512)
+        self.linear = nn.Linear(input_dim, encoder_hidden_size)
+        self.positional_encoder = PositionalEncoding(
+            d_model=encoder_hidden_size,
+            dropout=0.0,
+            max_len=13,
+        )
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                d_model=512,
-                nhead=8,
-                dropout=0.25,
+                d_model=encoder_hidden_size,
+                nhead=encoder_nhead,
+                dropout=encoder_dropout,
                 activation=F.gelu,
                 batch_first=True,
             ),
-            num_layers=2,
+            num_layers=encoder_num_layers,
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
-            nn.Dropout(0.25),
+            nn.Linear(encoder_hidden_size, classifier_hidden_size),
+            nn.BatchNorm1d(classifier_hidden_size),
+            nn.Dropout(classifier_dropout),
             nn.SiLU(),
-            nn.Linear(256, 1),
+            nn.Linear(classifier_hidden_size, 1),
         )
 
     def forward(self, x):

@@ -22,7 +22,6 @@ from abc import ABCMeta, abstractmethod
 
 import pickle
 import json
-from sklearn.preprocessing import StandardScaler, scale
 import yaml
 
 from tqdm.auto import tqdm
@@ -56,8 +55,8 @@ from sklearn.model_selection import (
 )
 
 from sklearn.cluster import KMeans
+from sklearn.metrics import mean_squared_error
 from sklearn.impute import KNNImputer
-from sklearn.decomposition import PCA
 
 from scipy.stats import skew, kurtosis
 from scipy.special import expit as sigmoid
@@ -75,7 +74,7 @@ tqdm.pandas()
 # ====================================================
 # config
 # ====================================================
-DEBUG = True
+DEBUG = False
 
 SEED = 42
 N_SPLITS = 5
@@ -84,7 +83,6 @@ N_SPLITS = 5
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
 INPUT_INTEGER_PICKLE_DIR = "../input/amex-integer-pickle"
-INPUT_CUSTOMER_IDS_DIR = "../input/amex-customer-ids"
 
 
 CAT_FEATURES = [
@@ -557,8 +555,8 @@ class XGBoostModel(BaseModelWrapper):
     def inference(self, X):
         d = xgb.DMatrix(
             data=X.to_numpy(),
-            feature_names=self.model.feature_names,
-            feature_types=self.model.feature_types,
+            feature_names=self.feature_names,
+            feature_types=self.feature_types,
             enable_categorical=True,
         )
         return self.model.predict(d)
@@ -755,10 +753,10 @@ def aggregate_features(df):
     with trace.timer("aggregate num features"):
         num_columns = [c for c in df.columns if c not in CAT_FEATURES + ["customer_ID", "S_2"]]
         agg_names = [
-            "mean",
-            # "max",
-            # "min",
-            # "std",
+            np.mean,
+            np.std,
+            np.max,
+            np.min,
             "last",
         ]
         num_agg_result = df.groupby("customer_ID")[num_columns].agg(agg_names).astype(pd.Float32Dtype())
@@ -773,8 +771,8 @@ def aggregate_features(df):
     with trace.timer("aggregate cat features"):
         cat_columns = CAT_FEATURES
         agg_names = [
-            # "count",
-            # "nunique",
+            "count",
+            "nunique",
             "last",
         ]
         cat_agg_result = df.groupby("customer_ID")[cat_columns].agg(agg_names).astype(pd.Int8Dtype())
@@ -800,59 +798,27 @@ def aggregate_features(df):
 def make_features(df, num_features, cat_features):
     trace = Trace()
 
-    feature_list = []
+    idx = df.index
+    colnames = []
+    feature_values = []
 
     # round2 of last num features
-    # with trace.timer("make round2 features"):
-    #     for col in num_features:
-    #         if col.endswith("-last") or col.endswith("-last_diff"):
-    #             colnames.append(f"{col}-round2")
-    #             feature_values.append(np.round(df[col], 2))
+    with trace.timer("make round2 features"):
+        for col in num_features:
+            if col.endswith("-last") or col.endswith("-last_diff"):
+                colnames.append(f"{col}-round2")
+                feature_values.append(np.round(df[col], 2))
 
     # the difference between last and mean
-    # with trace.timer("make difference features"):
-    #     for col in num_features:
-    #         if col.endswith("-last"):
-    #             col_base = col.split("-")[0]
-    #             colnames.append(f"{col_base}-last_mean_diff")
-    #             feature_values.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]))
-
-    ############################################################
-    # use GPU to make features
-    ############################################################
-
-    ### prepare features
-    with trace.timer("scaling, fillna, to GPU"):
-        features = pd.get_dummies(df, columns=cat_features)
-        features[num_features] = scale(features[num_features], copy=False).astype(np.float32)
-        features.fillna(0, inplace=True)
-        features = cudf.from_pandas(features)
-
-    ### kmeans
-    with trace.timer("kmeans"):
-        N_CLUSTERS = 10
-        kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
-        kmeans_feature = cudf.Series(
-            kmeans.fit_predict(features).astype(cupy.uint8),
-            name=f"kmeans_{N_CLUSTERS}",
-            index=features.index,
-        )
-        feature_list.append(kmeans_feature.to_pandas())
-        cat_features.append(f"kmeans_{N_CLUSTERS}")
-
-    ### PCA
-    with trace.timer("pca"):
-        N_COMPONENTS = 50
-        pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
-        pca_features = pca.fit_transform(features).astype(cupy.float32)
-        pca_features.columns = [f"pca_{i}" for i in range(N_COMPONENTS)]
-        feature_list.append(pca_features.to_pandas())
-
-    del features
-    gc.collect()
+    with trace.timer("make difference features"):
+        for col in num_features:
+            if col.endswith("-last"):
+                col_base = col.split("-")[0]
+                colnames.append(f"{col_base}-last_mean_diff")
+                feature_values.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).to_numpy())
 
     with trace.timer("concat results"):
-        df = pd.concat([df] + feature_list, axis=1)
+        df = pd.concat([df, pd.DataFrame(np.stack(feature_values, axis=1), index=idx, columns=colnames)], axis=1)
 
     num_features = [col for col in df.columns if col not in cat_features]
 
@@ -876,95 +842,56 @@ def fill_nan_values(df, num_features, cat_features):
 
 
 def prepare_data():
-    train_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "train.npy"), allow_pickle=True)
-    public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
-    private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
     train_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
     test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
-    train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
+    train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"))
 
     if DEBUG:
-        train_ids = np.random.choice(train_ids, size=1000, replace=False)
-        train_df = train_df.loc[train_df["customer_ID"].isin(train_ids)].reset_index(drop=True)
-        train_labels = train_labels.loc[train_labels["customer_ID"].isin(train_ids)].reset_index(drop=True)
-        public_ids = np.random.choice(public_ids, size=1000, replace=False)
-        private_ids = np.random.choice(private_ids, size=1000, replace=False)
-        test_df = test_df.loc[test_df["customer_ID"].isin(np.concatenate([public_ids, private_ids]))].reset_index(drop=True)
-
-    df = pd.concat([train_df, test_df]).reset_index(drop=True)
-    del train_df, test_df
-    gc.collect()
+        train_sample_ids = pd.Series(train_df["customer_ID"].unique()).sample(1000)
+        train_df = train_df.loc[train_df["customer_ID"].isin(train_sample_ids)].reset_index(drop=True)
+        train_labels = train_labels.loc[train_labels["customer_ID"].isin(train_sample_ids)].reset_index(drop=True)
+        test_sample_ids = pd.Series(test_df["customer_ID"].unique()).sample(1000)
+        test_df = test_df.loc[test_df["customer_ID"].isin(test_sample_ids)].reset_index(drop=True)
 
     # preprocessing
-    preprocess(df)
-    train_labels["customer_ID"] = pd.Categorical(train_labels["customer_ID"], ordered=True)
+    preprocess(train_df)
+    preprocess(test_df)
+    train_labels["customer_ID"] = pd.Categorical(
+        train_labels["customer_ID"],
+        ordered=True,
+    )
 
     # aggregation
-    df, num_features, cat_features = aggregate_features(df)
+    train_df, num_features, cat_features = aggregate_features(train_df)
+    test_df, _, _ = aggregate_features(test_df)
 
     # make features
-    df, num_features, cat_features = make_features(df, num_features, cat_features)
+    train_df, num_features, cat_features = make_features(train_df, num_features, cat_features)
+    test_df, _, _ = make_features(test_df, num_features, cat_features)
 
     # fill nan values
-    df, num_features, cat_features = fill_nan_values(df, num_features, cat_features)
+    train_df, num_features, cat_features = fill_nan_values(train_df, num_features, cat_features)
+    test_df, _, _ = fill_nan_values(test_df, num_features, cat_features)
 
-    # save results
-    df.to_pickle("data.pkl")
-    train_labels.to_pickle("train_labels.pkl")
-    np.save("train_ids.npy", train_ids, allow_pickle=True)
-    np.save("public_ids.npy", train_ids, allow_pickle=True)
-    np.save("private_ids.npy", private_ids, allow_pickle=True)
-    joblib.dump(num_features, "num_features.pkl")
-    joblib.dump(cat_features, "cat_features.pkl")
+    train_df.sort_index(inplace=True)
+    test_df.sort_index(inplace=True)
+    train_labels.sort_values("customer_ID", inplace=True)
+
+    print(f"shape of train: {train_df.shape}, shape of test: {test_df.shape}")
+
+    return train_df, test_df, train_labels, num_features, cat_features
 
 
 # ====================================================
 # training
 # ====================================================
-def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_features):
+def main():
     trace = Trace()
-    model = get_model(PARAMS)
 
-    # train
-    with trace.timer(f"training fold{fold}"):
-        model.train(
-            X_train=X_train,
-            y_train=y_train,
-            X_valid=X_valid,
-            y_valid=y_valid,
-            num_features=num_features,
-            cat_features=cat_features,
-        )
-
-    # plots
-    model.plot_importances(f"importance_fold{fold}.png")
-    model.plot_metrics(f"metric_fold{fold}.png")
-
-    # save
-    model.save(f"model_fold{fold}.pkl")
-
-    # oof
-    oof_preds = model.inference(X_valid)
-    score = amex_metric(y_valid.to_numpy(), oof_preds)
-    print(f"oof score of fold{fold}: {score:.4f}")
-
-    return oof_preds
-
-
-def training_main():
-    train_ids = np.load("train_ids.npy", allow_pickle=True)
-    train_labels = pd.read_pickle("train_labels.pkl")
-    df = pd.read_pickle("data.pkl")
-    num_features = joblib.load("num_features.pkl")
-    cat_features = joblib.load("cat_features.pkl")
-
-    train = df.loc[train_ids].sort_index()
-    train_labels.sort_values("customer_ID", inplace=True)
-
-    del df
-    gc.collect()
+    train, test, train_labels, num_features, cat_features = prepare_data()
 
     oof_prediction = np.zeros(len(train))
+    test_predictions = []
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
 
     for fold, (train_idx, valid_idx) in enumerate(
@@ -979,17 +906,35 @@ def training_main():
         y_train = train_labels.iloc[train_idx]["target"]
         y_valid = train_labels.iloc[valid_idx]["target"]
 
-        prediction = train_fold(
-            fold,
-            X_train,
-            y_train,
-            X_valid,
-            y_valid,
-            num_features,
-            cat_features,
-        )
+        model = get_model(PARAMS)
 
-        oof_prediction[valid_idx] = prediction
+        # train
+        with trace.timer(f"training fold{fold}"):
+            model.train(
+                X_train=X_train,
+                y_train=y_train,
+                X_valid=X_valid,
+                y_valid=y_valid,
+                num_features=num_features,
+                cat_features=cat_features,
+            )
+
+        # oof
+        preds = model.inference(X_valid)
+        oof_prediction[valid_idx] = preds
+        score = amex_metric(y_valid.to_numpy(), preds)
+
+        print(f"oof score of fold{fold}: {score:.4f}")
+
+        # test
+        test_predictions.append(model.inference(test))
+
+        # plots
+        model.plot_importances(f"importance_fold{fold}.png")
+        model.plot_metrics(f"metric_fold{fold}.png")
+
+        # save
+        model.save(f"model_fold{fold}.pkl")
 
     # feature names
     with open("feature_names.txt", "w") as f:
@@ -1011,54 +956,15 @@ def training_main():
 
     plot_distribution(oof_df["prediction"], train_labels["target"], path="oof_distribution.png")
 
-    return oof_score
-
-
-def inference_main():
-    public_ids = np.load("public_ids.npy", allow_pickle=True)
-    private_ids = np.load("private_ids.npy", allow_pickle=True)
-    df = pd.read_pickle("data.pkl")
-    num_features = joblib.load("num_features.pkl")
-    cat_features = joblib.load("cat_features.pkl")
-
-    public = df.loc[public_ids].sort_index()
-    private = df.loc[private_ids].sort_index()
-
-    del df
-    gc.collect()
-
-    public_predictions = []
-    private_predictions = []
-    for fold in range(N_SPLITS):
-        model = get_model(PARAMS)
-        model.load(f"model_fold{fold}.pkl")
-
-        public_predictions.append(model.inference(public))
-        private_predictions.append(model.inference(private))
-
     # test
-    public_prediction = np.mean(np.stack(public_predictions, axis=1), axis=1)
-    private_prediction = np.mean(np.stack(private_predictions, axis=1), axis=1)
-    public_df = pd.DataFrame(
+    test_prediction = np.mean(np.stack(test_predictions, axis=1), axis=1)
+    test_df = pd.DataFrame(
         {
-            "customer_ID": public.index,
-            "prediction": public_prediction,
+            "customer_ID": test.index,
+            "prediction": test_prediction,
         }
     )
-    private_df = pd.DataFrame(
-        {
-            "customer_ID": private.index,
-            "prediction": private_prediction,
-        }
-    )
-    test_df = pd.concat([public_df, private_df], axis=0).reset_index(drop=True)
     test_df.to_csv("submission.csv", index=False)
-
-
-def main():
-    prepare_data()
-    oof_score = training_main()
-    inference_main()
 
     return Box(
         {
