@@ -803,17 +803,17 @@ def make_features(df, num_features, cat_features):
     feature_list = []
 
     # round2 of last num features
-    with trace.timer("make round2 features"):
-        for col in num_features:
-            if col.endswith("-last") or col.endswith("-last_diff"):
-                feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
+    # with trace.timer("make round2 features"):
+    #     for col in num_features:
+    #         if col.endswith("-last") or col.endswith("-last_diff"):
+    #             feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
 
     # the difference between last and mean
-    with trace.timer("make difference features"):
-        for col in num_features:
-            if col.endswith("-last"):
-                col_base = col.split("-")[0]
-                feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
+    # with trace.timer("make difference features"):
+    #     for col in num_features:
+    #         if col.endswith("-last"):
+    #             col_base = col.split("-")[0]
+    #             feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
 
     ############################################################
     # use GPU to make features
@@ -821,64 +821,30 @@ def make_features(df, num_features, cat_features):
 
     ### prepare features
     with trace.timer("scaling, fillna, to GPU"):
-        cat = cudf.get_dummies(cudf.from_pandas(df[cat_features]), columns=cat_features)
-        num = cuml.preprocessing.StandardScaler(copy=False).fit_transform(cudf.from_pandas(df[cat_features])).astype(cupy.float32)
-        features = cudf.concat([num, cat], axis=1)
-        del num, cat
-        gc.collect()
+        features = pd.get_dummies(df, columns=cat_features)
+        features[num_features] = scale(features[num_features], copy=False).astype(np.float32)
         features.fillna(0, inplace=True)
+        features = cudf.from_pandas(features)
 
     ### kmeans
     with trace.timer("kmeans"):
         N_CLUSTERS = 10
         kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
-        kmeans_feature = pd.Series(
-            kmeans.fit_predict(features).astype(cupy.uint8).to_numpy(),
+        kmeans_feature = cudf.Series(
+            kmeans.fit_predict(features).astype(cupy.uint8),
             name=f"kmeans_{N_CLUSTERS}",
-            index=features.index.to_numpy(),
+            index=features.index,
         )
-        feature_list.append(kmeans_feature)
+        feature_list.append(kmeans_feature.to_pandas())
         cat_features.append(f"kmeans_{N_CLUSTERS}")
 
     ### PCA
-    # with trace.timer("pca"):
-    #     N_COMPONENTS = 50
-    #     pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
-    #     pca_features = pd.DataFrame(
-    #         pca.fit_transform(features).astype(cupy.float32).to_numpy(),
-    #         columns=[f"pca_{i}" for i in range(N_COMPONENTS)],
-    #         index=features.index.to_numpy(),
-    #     )
-    #     feature_list.append(pca_features)
-
-    ### KNN
-    # with trace.timer("knn"):
-    #     USECOLS = [col for col in features.columns if "last" in col or "mean" in col]
-    #     N_NEIGHBORS = 30
-    #     METRIC = "euclidean"
-    #     knn = cuml.NearestNeighbors(
-    #         n_neighbors=N_NEIGHBORS,
-    #         metric=METRIC,
-    #         verbose=True,
-    #         output_type="numpy",
-    #     )
-    #     knn.fit(features[USECOLS])
-    #     neighbors = knn.kneighbors(features[USECOLS], return_distance=False).astype(np.uint16)
-    #     names = []
-    #     arrays = []
-    #     for col in tqdm(USECOLS, desc="nearest neighbors"):
-    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_max")
-    #         arrays.append(np.nanmax(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
-    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
-    #         arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
-
-    #     feature_list.append(
-    #         pd.DataFrame(
-    #             np.stack(arrays, axis=1),
-    #             columns=names,
-    #             index=df.index,
-    #         )
-    #     )
+    with trace.timer("pca"):
+        N_COMPONENTS = 50
+        pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
+        pca_features = pca.fit_transform(features).astype(cupy.float32)
+        pca_features.columns = [f"pca_{i}" for i in range(N_COMPONENTS)]
+        feature_list.append(pca_features.to_pandas())
 
     del features
     gc.collect()
@@ -939,8 +905,6 @@ def prepare_data():
 
     # fill nan values
     df, num_features, cat_features = fill_nan_values(df, num_features, cat_features)
-
-    print(f"df.shape={df.shape}")
 
     # save results
     df.to_pickle("data.pkl")
@@ -1090,7 +1054,6 @@ def inference_main():
 
 
 def main():
-    seed_everything(SEED)
     prepare_data()
     oof_score = training_main()
     inference_main()

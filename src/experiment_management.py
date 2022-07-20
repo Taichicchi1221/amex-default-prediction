@@ -20,12 +20,12 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 
 
 ########################## sequential model ##########################
-# WORKFILE_NAME = "sequencial_model_work.py"
+# WORKFILE_NAME = "sequential_model_work.py"
 # MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## sequential model ##########################
 
-EXPERIMENT_NAME = "exp015"
-EXPERIMENT_DESC = "xgboost + less features + pca,kmeans"
+EXPERIMENT_NAME = "exp017"
+EXPERIMENT_DESC = "lgbmdart + pca,kmeans"
 
 # ====================================================
 # util

@@ -300,53 +300,53 @@ R_FEATURES = [
     "R_28",
 ]
 
-# PARAMS = {
-#     "type": "LightGBM",
-#     "num_boost_round": 100000,
-#     "early_stopping_rounds": 1500,
-#     "seed": SEED,
-#     "n_splits": N_SPLITS,
-#     "params": {
-#         "objective": "binary",
-#         "metric": ["auc"],
-#         "boosting_type": "dart",  # {gbdt, dart}
-#         "learning_rate": 0.01,
-#         "num_leaves": 128,
-#         "min_data_in_leaf": 40,
-#         "reg_alpha": 1.0,
-#         "reg_lambda": 2.0,
-#         "feature_fraction": 0.20,
-#         "bagging_freq": 10,
-#         "bagging_fraction": 0.50,
-#         "seed": SEED,
-#         "bagging_seed": SEED,
-#         "feature_fraction_seed": SEED,
-#         "verbose": -1,
-#         "n_jobs": -1,
-#     },
-# }
-
-
 PARAMS = {
-    "type": "XGBoost",
+    "type": "LightGBM",
     "num_boost_round": 100000,
     "early_stopping_rounds": 1500,
     "seed": SEED,
     "n_splits": N_SPLITS,
     "params": {
-        "objective": "binary:logitraw",
-        "eval_metric": "auc",
-        "booster": "gbtree",
-        "learning_rate": 0.03,
-        "max_depth": 4,
-        "subsample": 0.8,
-        "colsample_bytree": 0.6,
-        "tree_method": "gpu_hist",
-        "predictor": "gpu_predictor",
+        "objective": "binary",
+        "metric": ["auc"],
+        "boosting_type": "dart",  # {gbdt, dart}
+        "learning_rate": 0.01,
+        "num_leaves": 128,
+        "min_data_in_leaf": 40,
+        "reg_alpha": 1.0,
+        "reg_lambda": 2.0,
+        "feature_fraction": 0.20,
+        "bagging_freq": 10,
+        "bagging_fraction": 0.50,
+        "seed": SEED,
+        "bagging_seed": SEED,
+        "feature_fraction_seed": SEED,
+        "verbose": -1,
         "n_jobs": -1,
-        "random_state": SEED,
     },
 }
+
+
+# PARAMS = {
+#     "type": "XGBoost",
+#     "num_boost_round": 100000,
+#     "early_stopping_rounds": 1500,
+#     "seed": SEED,
+#     "n_splits": N_SPLITS,
+#     "params": {
+#         "objective": "binary:logitraw",
+#         "eval_metric": "auc",
+#         "booster": "gbtree",
+#         "learning_rate": 0.03,
+#         "max_depth": 4,
+#         "subsample": 0.8,
+#         "colsample_bytree": 0.6,
+#         "tree_method": "gpu_hist",
+#         "predictor": "gpu_predictor",
+#         "n_jobs": -1,
+#         "random_state": SEED,
+#     },
+# }
 
 
 # ====================================================
@@ -803,17 +803,17 @@ def make_features(df, num_features, cat_features):
     feature_list = []
 
     # round2 of last num features
-    with trace.timer("make round2 features"):
-        for col in num_features:
-            if col.endswith("-last") or col.endswith("-last_diff"):
-                feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
+    # with trace.timer("make round2 features"):
+    #     for col in num_features:
+    #         if col.endswith("-last") or col.endswith("-last_diff"):
+    #             feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
 
     # the difference between last and mean
-    with trace.timer("make difference features"):
-        for col in num_features:
-            if col.endswith("-last"):
-                col_base = col.split("-")[0]
-                feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
+    # with trace.timer("make difference features"):
+    #     for col in num_features:
+    #         if col.endswith("-last"):
+    #             col_base = col.split("-")[0]
+    #             feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
 
     ############################################################
     # use GPU to make features
@@ -821,12 +821,10 @@ def make_features(df, num_features, cat_features):
 
     ### prepare features
     with trace.timer("scaling, fillna, to GPU"):
-        cat = cudf.get_dummies(cudf.from_pandas(df[cat_features]), columns=cat_features)
-        num = cuml.preprocessing.StandardScaler(copy=False).fit_transform(cudf.from_pandas(df[cat_features])).astype(cupy.float32)
-        features = cudf.concat([num, cat], axis=1)
-        del num, cat
-        gc.collect()
+        features = pd.get_dummies(df, columns=cat_features)
+        features[num_features] = scale(features[num_features], copy=False).astype(np.float32)
         features.fillna(0, inplace=True)
+        features = cudf.from_pandas(features)
 
     ### kmeans
     with trace.timer("kmeans"):
@@ -841,15 +839,15 @@ def make_features(df, num_features, cat_features):
         cat_features.append(f"kmeans_{N_CLUSTERS}")
 
     ### PCA
-    # with trace.timer("pca"):
-    #     N_COMPONENTS = 50
-    #     pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
-    #     pca_features = pd.DataFrame(
-    #         pca.fit_transform(features).astype(cupy.float32).to_numpy(),
-    #         columns=[f"pca_{i}" for i in range(N_COMPONENTS)],
-    #         index=features.index.to_numpy(),
-    #     )
-    #     feature_list.append(pca_features)
+    with trace.timer("pca"):
+        N_COMPONENTS = 50
+        pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
+        pca_features = pd.DataFrame(
+            pca.fit_transform(features).astype(cupy.float32).to_numpy(),
+            columns=[f"pca_{i}" for i in range(N_COMPONENTS)],
+            index=features.index.to_numpy(),
+        )
+        feature_list.append(pca_features)
 
     ### KNN
     # with trace.timer("knn"):

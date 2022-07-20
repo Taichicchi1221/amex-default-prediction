@@ -1062,6 +1062,7 @@ def inference_main(model_paths):
 
 
 def main():
+    seed_everything(SEED)
     oof_score, model_paths = training_main()
     inference_main(model_paths)
 
