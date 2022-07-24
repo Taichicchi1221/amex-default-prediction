@@ -14,27 +14,28 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-# WORKFILE_NAME = "customer_aggregation_work.py"
-# DEPENDENT_FILES = ["utils.py"]
-# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+WORKFILE_NAME = "customer_aggregation_work.py"
+DEPENDENT_FILES = ["utils.py"]
+MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 ########################## customer aggregation ##########################
 
 
 ########################## sequential model ##########################
 # WORKFILE_NAME = "sequential_model_work.py"
-# DEPENDENT_FILES = ["utils.py"]
+# DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
 # MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## sequential model ##########################
 
+
 ########################## adversarial_validation ##########################
-WORKFILE_NAME = "customer_aggregation_adversarial_validation_work.py"
-DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
-MLFLOW_EXPERIMENT = "ADVERSARIAL_VALIDATION"
+# WORKFILE_NAME = "customer_aggregation_adversarial_validation_work.py"
+# DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
+# MLFLOW_EXPERIMENT = "ADVERSARIAL_VALIDATION"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "adv_exp004"
-EXPERIMENT_DESC = "adversarial_validation drop [R_1, B_29, D_121, D_59, S_11]"
+EXPERIMENT_NAME = "exp024"
+EXPERIMENT_DESC = "lgbmdart + num_count + round2 + last-mean + drop(R_1, B_29)"
 
 # ====================================================
 # util

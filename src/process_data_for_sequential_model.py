@@ -76,6 +76,17 @@ def preprocess(df: pd.DataFrame):
     # S_2
     df["S_2"] = pd.to_datetime(df["S_2"], format="%Y-%m-%d")
 
+    # dropcols
+    dropcols = [
+        "R_1",
+        "B_29",
+        "D_121",
+        "D_59",
+        "S_11",
+        "D_115",
+    ]
+    df.drop(columns=dropcols, inplace=True)
+
 
 def make_features(train, test):
     START_TIME = time.perf_counter()
