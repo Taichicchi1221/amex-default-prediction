@@ -656,14 +656,7 @@ def preprocess(df: pd.DataFrame):
         df[col] = _preprocess_categorical(df[col])
 
     # dropcols
-    dropcols = [
-        "R_1",
-        "B_29",
-        "D_121",
-        "D_59",
-        "S_11",
-        "D_115",
-    ]
+    dropcols = ["R_1", "B_29", "D_121", "D_59", "S_11"]
     df.drop(columns=dropcols, inplace=True)
 
 

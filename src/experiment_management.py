@@ -33,8 +33,8 @@ MLFLOW_EXPERIMENT = "ADVERSARIAL_VALIDATION"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "adv_exp003"
-EXPERIMENT_DESC = "adversarial_validation drop [R_1, B_29]"
+EXPERIMENT_NAME = "adv_exp004"
+EXPERIMENT_DESC = "adversarial_validation drop [R_1, B_29, D_121, D_59, S_11]"
 
 # ====================================================
 # util
