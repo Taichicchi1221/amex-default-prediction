@@ -1,0 +1,1 @@
+adversarial_validation drop [R_1, B_29]

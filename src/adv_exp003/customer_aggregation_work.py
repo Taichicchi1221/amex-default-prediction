@@ -525,11 +525,18 @@ class LightGBMModel(BaseModelWrapper):
 
         self.evals_result = {}
 
-        early_stopping_callback = DartEarlyStopping(
-            data_name="valid",
-            monitor_metric="amex",
-            stopping_round=self.params["early_stopping_rounds"],
-        )
+        if self.dart:
+            early_stopping_callback = DartEarlyStopping(
+                data_name="valid",
+                monitor_metric="amex",
+                stopping_round=self.params["early_stopping_rounds"],
+            )
+        else:
+            early_stopping_callback = lgb.callback.early_stopping(
+                stopping_rounds=self.params["early_stopping_rounds"],
+                first_metric_only=True,
+                verbose=True,
+            )
 
         callbacks = [
             early_stopping_callback,
@@ -547,8 +554,9 @@ class LightGBMModel(BaseModelWrapper):
             categorical_feature=cat_features,
         )
 
-        if early_stopping_callback.best_model is not None:
-            self.model = early_stopping_callback.best_model
+        if self.dart:
+            if early_stopping_callback.best_model is not None:
+                self.model = early_stopping_callback.best_model
 
     def inference(self, X):
         return self.model.predict(X, raw_score=True)

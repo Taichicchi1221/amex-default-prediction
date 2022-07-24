@@ -70,9 +70,6 @@ import lightgbm as lgb
 import xgboost as xgb
 import catboost as cb
 
-# utils
-from utils import *
-
 tqdm.pandas()
 
 # ====================================================
@@ -311,7 +308,7 @@ R_FEATURES = [
 #     "n_splits": N_SPLITS,
 #     "params": {
 #         "objective": "binary",
-#         "metric": "None",
+#         "metric": ["auc"],
 #         "boosting_type": "dart",  # {gbdt, dart}
 #         "learning_rate": 0.01,
 #         "num_leaves": 128,
@@ -338,6 +335,7 @@ PARAMS = {
     "n_splits": N_SPLITS,
     "params": {
         "objective": "binary:logitraw",
+        "eval_metric": "auc",
         "booster": "gbtree",
         "learning_rate": 0.03,
         "max_depth": 4,
@@ -349,6 +347,98 @@ PARAMS = {
         "random_state": SEED,
     },
 }
+
+
+# ====================================================
+# utils
+# ====================================================
+def memory_used_to_str():
+    pid = os.getpid()
+    processs = psutil.Process(pid)
+    memory_use = processs.memory_info()[0] / 2.0**30
+    return "ram memory gb :" + str(np.round(memory_use, 2))
+
+
+def seed_everything(seed: int = 42, deterministic: bool = False):
+    """Set seeds"""
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)  # type: ignore
+    torch.backends.cudnn.deterministic = deterministic  # type: ignore
+
+
+def get_gpu_memory(cmd_path="nvidia-smi", target_properties=("memory.total", "memory.used")):
+    """
+    ref: https://www.12-technology.com/2022/01/pythongpu.html
+    Returns
+    -------
+    gpu_total : ndarray,  "memory.total"
+    gpu_used: ndarray, "memory.used"
+    """
+
+    # formatオプション定義
+    format_option = "--format=csv,noheader,nounits"
+
+    # コマンド生成
+    cmd = "%s --query-gpu=%s %s" % (cmd_path, ",".join(target_properties), format_option)
+
+    # サブプロセスでコマンド実行
+    cmd_res = subprocess.check_output(cmd, shell=True)
+
+    # コマンド実行結果をオブジェクトに変換
+    gpu_lines = cmd_res.decode().split("\n")[0].split(", ")
+
+    gpu_total = int(gpu_lines[0]) / 1024
+    gpu_used = int(gpu_lines[1]) / 1024
+
+    gpu_total = np.round(gpu_used, 1)
+    gpu_used = np.round(gpu_used, 1)
+    return gpu_total, gpu_used
+
+
+class Trace:
+    cuda = torch.cuda.is_available()
+    if os.getenv("KAGGLE_IS_COMPETITION_RERUN"):
+        is_competition_rerun = True
+    else:
+        is_competition_rerun = False
+
+    @contextmanager
+    def timer(self, title):
+        t0 = time.time()
+        p = psutil.Process(os.getpid())
+        cpu_m0 = p.memory_info().rss / 2.0**30
+        if self.cuda:
+            gpu_m0 = get_gpu_memory()[0]
+        yield
+        cpu_m1 = p.memory_info().rss / 2.0**30
+        if self.cuda:
+            gpu_m1 = get_gpu_memory()[0]
+
+        cpu_delta = cpu_m1 - cpu_m0
+        if self.cuda:
+            gpu_delta = gpu_m1 - gpu_m0
+
+        cpu_sign = "+" if cpu_delta >= 0 else "-"
+        cpu_delta = math.fabs(cpu_delta)
+
+        if self.cuda:
+            gpu_sign = "+" if gpu_delta >= 0 else "-"
+        if self.cuda:
+            gpu_delta = math.fabs(gpu_delta)
+
+        cpu_message = f"{cpu_m1:.1f}GB({cpu_sign}{cpu_delta:.1f}GB)"
+        if self.cuda:
+            gpu_message = f"{gpu_m1:.1f}GB({gpu_sign}{gpu_delta:.1f}GB)"
+
+        if self.cuda:
+            message = f"[cpu: {cpu_message}, gpu: {gpu_message}: {time.time() - t0:.1f}sec] {title} "
+        else:
+            message = f"[cpu: {cpu_message}: {time.time() - t0:.1f}sec] {title} "
+
+        print(message, file=sys.stderr)
 
 
 # ====================================================
@@ -368,7 +458,7 @@ def plot_distribution(ypred, ytrue, path):
 # ====================================================
 # https://www.kaggle.com/kyakovlev
 # https://www.kaggle.com/competitions/amex-default-prediction/discussion/327534
-def amex_metric(y_true, y_pred, return_details=False):
+def amex_metric(y_true, y_pred):
 
     labels = np.transpose(np.array([y_true, y_pred]))
     labels = labels[labels[:, 1].argsort()[::-1]]
@@ -386,9 +476,6 @@ def amex_metric(y_true, y_pred, return_details=False):
         cum_pos_found = np.cumsum(labels[:, 0] * weight)
         lorentz = cum_pos_found / total_pos
         gini[i] = np.sum((lorentz - weight_random) * weight)
-
-    if return_details:
-        return 0.5 * (gini[1] / gini[0] + top_four), gini[1] / gini[0], top_four
 
     return 0.5 * (gini[1] / gini[0] + top_four)
 
@@ -516,8 +603,6 @@ class LightGBMModel(BaseModelWrapper):
     def __init__(self, params) -> None:
         super().__init__()
         self.params = params
-        if params["params"]["boosting_type"] == "dart":
-            self.dart = True
 
     def train(self, X_train, y_train, X_valid, y_valid, num_features, cat_features):
         train_set = lgb.Dataset(X_train, y_train, feature_name=list(X_train.columns))
@@ -530,7 +615,6 @@ class LightGBMModel(BaseModelWrapper):
             monitor_metric="amex",
             stopping_round=self.params["early_stopping_rounds"],
         )
-
         callbacks = [
             early_stopping_callback,
             lgb.callback.record_evaluation(eval_result=self.evals_result),
@@ -655,10 +739,6 @@ def preprocess(df: pd.DataFrame):
     for col in CAT_FEATURES:
         df[col] = _preprocess_categorical(df[col])
 
-    # dropcols
-    dropcols = ["R_1", "B_29"]
-    df.drop(columns=dropcols, inplace=True)
-
 
 def aggregate_features(df):
     trace = Trace()
@@ -723,41 +803,41 @@ def make_features(df, num_features, cat_features):
     feature_list = []
 
     # round2 of last num features
-    # with trace.timer("make round2 features"):
-    #     for col in num_features:
-    #         if col.endswith("-last") or col.endswith("-last_diff"):
-    #             feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
+    with trace.timer("make round2 features"):
+        for col in num_features:
+            if col.endswith("-last") or col.endswith("-last_diff"):
+                feature_list.append(np.round(df[col], 2).rename(f"{col}-round2"))
 
     # the difference between last and mean
-    # with trace.timer("make difference features"):
-    #     for col in num_features:
-    #         if col.endswith("-last"):
-    #             col_base = col.split("-")[0]
-    #             feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
+    with trace.timer("make difference features"):
+        for col in num_features:
+            if col.endswith("-last"):
+                col_base = col.split("-")[0]
+                feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
 
     ############################################################
     # use GPU to make features
     ############################################################
 
     ### prepare features
-    # with trace.timer("scaling, fillna, to GPU"):
-    #     features = pd.get_dummies(df, columns=cat_features)
-    #     features[num_features] = StandardScaler(copy=False).fit_transform(features[num_features]).astype(np.float32)
-    #     features.fillna(0, inplace=True)
-    #     features = cudf.from_pandas(features)
-    #     gc.collect()
+    with trace.timer("scaling, fillna, to GPU"):
+        features = pd.get_dummies(df, columns=cat_features)
+        features[num_features] = scale(features[num_features], copy=False).astype(np.float32)
+        features.fillna(0, inplace=True)
+        features = cudf.from_pandas(features)
+        gc.collect()
 
     ### kmeans
-    # with trace.timer("kmeans"):
-    #     N_CLUSTERS = 10
-    #     kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
-    #     kmeans_feature = pd.Series(
-    #         kmeans.fit_predict(features).astype(cupy.uint8).to_numpy(),
-    #         name=f"kmeans_{N_CLUSTERS}",
-    #         index=features.index.to_numpy(),
-    #     )
-    #     feature_list.append(kmeans_feature)
-    #     cat_features.append(f"kmeans_{N_CLUSTERS}")
+    with trace.timer("kmeans"):
+        N_CLUSTERS = 10
+        kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
+        kmeans_feature = pd.Series(
+            kmeans.fit_predict(features).astype(cupy.uint8).to_numpy(),
+            name=f"kmeans_{N_CLUSTERS}",
+            index=features.index.to_numpy(),
+        )
+        feature_list.append(kmeans_feature)
+        cat_features.append(f"kmeans_{N_CLUSTERS}")
 
     ### PCA
     # with trace.timer("pca"):
@@ -799,8 +879,8 @@ def make_features(df, num_features, cat_features):
     #         )
     #     )
 
-    # del features
-    # gc.collect()
+    del features
+    gc.collect()
 
     with trace.timer("concat results"):
         df = pd.concat([df] + feature_list, axis=1)
@@ -826,7 +906,7 @@ def fill_nan_values(df, num_features, cat_features):
     return df, num_features, cat_features
 
 
-def prepare_data(debug):
+def prepare_data():
     train_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "train.npy"), allow_pickle=True)
     public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
     private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
@@ -834,7 +914,7 @@ def prepare_data(debug):
     test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
 
-    if debug:
+    if DEBUG:
         train_ids = np.random.choice(train_ids, size=1000, replace=False)
         train_df = train_df.loc[train_df["customer_ID"].isin(train_ids)].reset_index(drop=True)
         train_labels = train_labels.loc[train_labels["customer_ID"].isin(train_ids)].reset_index(drop=True)
@@ -898,10 +978,8 @@ def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_featu
 
     # oof
     oof_preds = model.inference(X_valid)
-    score, g, d = amex_metric(y_valid.to_numpy(), oof_preds, return_details=True)
+    score = amex_metric(y_valid.to_numpy(), oof_preds)
     print(f"oof score of fold{fold}: {score:.4f}")
-    print(f"gini: {g:.4f}")
-    print(f"default rate(4%): {d:.4f}")
 
     return oof_preds
 
@@ -957,22 +1035,16 @@ def training_main():
             "prediction": oof_prediction,
         }
     )
-    oof_score, g, d = amex_metric(
+    oof_score = amex_metric(
         train_labels["target"].to_numpy(),
         oof_df["prediction"].to_numpy(),
-        return_details=True,
     )
-    print("#" * 10)
     print(f"oof score: {oof_score:.4f}")
-    print(f"gini: {g:.4f}")
-    print(f"default rate(4%): {d:.4f}")
-    print("#" * 10)
-
     oof_df.to_csv("oof.csv", index=False)
 
     plot_distribution(oof_df["prediction"], train_labels["target"], path="oof_distribution.png")
 
-    return oof_score, g, d
+    return oof_score
 
 
 def inference_main():
@@ -1019,7 +1091,7 @@ def inference_main():
 def main():
     seed_everything(SEED)
     prepare_data()
-    oof_score, g, d = training_main()
+    oof_score = training_main()
     inference_main()
 
     return Box(
@@ -1027,8 +1099,6 @@ def main():
             "params": PARAMS,
             "metrics": {
                 "valid_score": oof_score,
-                "valid_g": g,
-                "valid_d": d,
                 "public_score": np.nan,
                 "private_score": np.nan,
             },

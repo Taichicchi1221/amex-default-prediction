@@ -14,18 +14,27 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-WORKFILE_NAME = "customer_aggregation_work.py"
-MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+# WORKFILE_NAME = "customer_aggregation_work.py"
+# DEPENDENT_FILES = ["utils.py"]
+# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 ########################## customer aggregation ##########################
 
 
 ########################## sequential model ##########################
 # WORKFILE_NAME = "sequential_model_work.py"
+# DEPENDENT_FILES = ["utils.py"]
 # MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## sequential model ##########################
 
-EXPERIMENT_NAME = "exp017"
-EXPERIMENT_DESC = "lgbmdart + pca,kmeans"
+########################## adversarial_validation ##########################
+WORKFILE_NAME = "customer_aggregation_adversarial_validation_work.py"
+DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
+MLFLOW_EXPERIMENT = "ADVERSARIAL_VALIDATION"
+########################## adversarial_validation ##########################
+
+
+EXPERIMENT_NAME = "adv_exp003"
+EXPERIMENT_DESC = "adversarial_validation drop [R_1, B_29]"
 
 # ====================================================
 # util
@@ -86,8 +95,14 @@ def manage_experiment():
     os.makedirs(dir_, exist_ok=False)
     shutil.copy(f"../src/{WORKFILE_NAME}", f"{dir_}/work.py")
 
+    for dependent_file in DEPENDENT_FILES:
+        shutil.copy(f"../src/{dependent_file}", f"{dir_}/{dependent_file}")
+
     # copy src -> work
-    shutil.copy(f"../src/{WORKFILE_NAME}", "./work.py")
+    shutil.copy(f"../src/{WORKFILE_NAME}", "work.py")
+
+    for dependent_file in DEPENDENT_FILES:
+        shutil.copy(f"../src/{dependent_file}", dependent_file)
 
     # write DESC -> exp
     with open(os.path.join(dir_, "desc.txt"), "w") as f:

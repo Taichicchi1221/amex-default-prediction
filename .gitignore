@@ -2,3 +2,4 @@ input/*
 work/*
 mlruns/*
 kaggle.json
+__pycache__
