@@ -41,7 +41,6 @@ import cuml
 # ====================================================
 DEBUG = False
 
-TYPE = "private"
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -78,12 +77,12 @@ def preprocess(df: pd.DataFrame):
 
     # dropcols
     dropcols = [
-        "R_1",
-        "B_29",
-        "D_121",
-        "D_59",
-        "S_11",
-        "D_115",
+        # "R_1",
+        # "B_29",
+        # "D_121",
+        # "D_59",
+        # "S_11",
+        # "D_115",
     ]
     df.drop(columns=dropcols, inplace=True)
 
@@ -102,12 +101,11 @@ def make_features(train, test):
     gc.collect()
 
     # date features
-    cols = ["month", "weekday", "day"]
+    cols = ["month", "weekday"]
     date_df = pd.concat(
         [
             df["S_2"].dt.month.astype("int16"),
             df["S_2"].dt.weekday.astype("int16"),
-            df["S_2"].dt.day.astype("int16"),
         ],
         axis=1,
     )
@@ -120,16 +118,15 @@ def make_features(train, test):
 
     print(f"make date features: {time.perf_counter() - START_TIME:.2f} seconds")
 
-    # fillna
-    for col in num_features:
-        df[col].fillna(0, inplace=True)
-    print(f"process num features: {time.perf_counter() - START_TIME:.2f} seconds")
-
     # dummies
     df = pd.get_dummies(df, columns=cat_features, drop_first=False, dummy_na=True)
     cat_features = [col for col in df.columns if col not in num_features]
 
     print(f"process cat features: {time.perf_counter() - START_TIME:.2f} seconds")
+
+    # fillna
+    df.fillna(0, inplace=True)
+    print(f"process num features: {time.perf_counter() - START_TIME:.2f} seconds")
 
     # dropcols
     df.drop(columns="S_2", inplace=True)
@@ -140,7 +137,7 @@ def make_features(train, test):
     return df.loc[train_customer_ids], df.loc[test_customer_ids], num_features, cat_features
 
 
-def prepare_data():
+def prepare_data(TYPE):
     train_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
     test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"))
@@ -225,7 +222,10 @@ def prepare_data():
 
 def main():
     os.chdir("/workspaces/amex-default-prediction/work")
-    prepare_data()
+
+    prepare_data("train")
+    prepare_data("public")
+    prepare_data("private")
 
 
 if __name__ == "__main__":

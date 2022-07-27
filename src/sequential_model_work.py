@@ -77,7 +77,7 @@ tqdm.pandas()
 # ====================================================
 # config
 # ====================================================
-DEBUG = True
+DEBUG = False
 
 SEED = 42
 N_SPLITS = 5
@@ -306,13 +306,13 @@ PARAMS = {
     "model": {
         "type": "Transformer",
         "params": {
-            "encoder_num_layers": 1,
+            "encoder_num_layers": 6,
             "encoder_hidden_size": 512,
-            "encoder_dropout": 0.25,
+            "encoder_dropout": 0.00,
             "encoder_nhead": 8,  # transformer
             # "encoder_bidirectional": False,  # LSTM, GRU
-            "classifier_hidden_size": 256,
-            "classifier_dropout": 0.25,
+            "classifier_hidden_size": 128,
+            "classifier_dropout": 0.00,
         },
     },
     "trainer": {
@@ -350,8 +350,8 @@ PARAMS = {
     "optimizer": {
         "cls": torch.optim.AdamW,
         "params": {
-            "lr": 1e-03,
-            "weight_decay": 1e-05,
+            "lr": 1.0e-04,
+            "weight_decay": 0.00,
         },
     },
     "scheduler": {

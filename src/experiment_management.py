@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "exp024"
-EXPERIMENT_DESC = "lgbmdart + num_count + round2 + last-mean + drop(R_1, B_29)"
+EXPERIMENT_NAME = "exp027"
+EXPERIMENT_DESC = "lgbmdart + date-agg + drop(R_1, B_29) + after-pay-features"
 
 # ====================================================
 # util

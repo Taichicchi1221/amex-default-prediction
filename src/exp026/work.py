@@ -428,23 +428,12 @@ class XGBoostModel(BaseModelWrapper):
         super().__init__()
         self.params = params
 
-    def train(
-        self,
-        X_train,
-        y_train,
-        X_valid,
-        y_valid,
-        sample_weight_train,
-        sample_weight_valid,
-        num_features,
-        cat_features,
-    ):
+    def train(self, X_train, y_train, X_valid, y_valid, num_features, cat_features):
         self.feature_names = list(X_train.columns)
         self.feature_types = [("c" if f in cat_features else "q") for f in self.feature_names]
         train_set = xgb.DMatrix(
             data=X_train.to_numpy(),
             label=y_train.to_numpy(),
-            weight=sample_weight_train,
             feature_names=self.feature_names,
             feature_types=self.feature_types,
             enable_categorical=True,
@@ -452,7 +441,6 @@ class XGBoostModel(BaseModelWrapper):
         valid_set = xgb.DMatrix(
             data=X_valid.to_numpy(),
             label=y_valid.to_numpy(),
-            weight=sample_weight_valid,
             feature_names=self.feature_names,
             feature_types=self.feature_types,
             enable_categorical=True,
@@ -529,20 +517,12 @@ class LightGBMModel(BaseModelWrapper):
     def __init__(self, params) -> None:
         super().__init__()
         self.params = params
+        if params["params"]["boosting_type"] == "dart":
+            self.dart = True
 
-    def train(
-        self,
-        X_train,
-        y_train,
-        X_valid,
-        y_valid,
-        sample_weight_train,
-        sample_weight_valid,
-        num_features,
-        cat_features,
-    ):
-        train_set = lgb.Dataset(X_train, y_train, weight=sample_weight_train, feature_name=list(X_train.columns))
-        valid_set = lgb.Dataset(X_valid, y_valid, weight=sample_weight_valid, feature_name=list(X_valid.columns))
+    def train(self, X_train, y_train, X_valid, y_valid, num_features, cat_features):
+        train_set = lgb.Dataset(X_train, y_train, feature_name=list(X_train.columns))
+        valid_set = lgb.Dataset(X_valid, y_valid, feature_name=list(X_valid.columns))
 
         self.evals_result = {}
 
@@ -668,15 +648,13 @@ def preprocess(df: pd.DataFrame):
     # S_2
     df["S_2"] = pd.to_datetime(df["S_2"], format="%Y-%m-%d")
 
-    # compute "after pay" features
-    values = []
-    for bcol in ["B_11", "B_14", "B_17"] + ["D_39", "D_131"] + ["S_16", "S_23"]:
-        for pcol in ["P_2", "P_3"]:
-            if bcol in df.columns:
-                values.append((df[bcol] - df[pcol]).rename(f"{bcol}_{pcol}_diff").astype(pd.Float32Dtype()))
-    df = pd.concat([df] + values, axis=1)
-    del values
-    gc.collect()
+    def _preprocess_categorical(x):
+        assert pd.api.types.is_integer_dtype(x)
+        min_value = x.min()
+        return x - min_value
+
+    for col in CAT_FEATURES:
+        df[col] = _preprocess_categorical(df[col])
 
     # dropcols
     dropcols = [
@@ -684,8 +662,6 @@ def preprocess(df: pd.DataFrame):
         "B_29",
     ]
     df.drop(columns=dropcols, inplace=True)
-
-    return df
 
 
 def aggregate_features(df):
@@ -720,18 +696,10 @@ def aggregate_features(df):
         diff = (last1 - last2).add_suffix("-last_diff")
         return diff
 
-    # last_frac
-    def agg_last_frac(df, num_features):
-        last1 = df.groupby("customer_ID")[num_features].nth(-1).sort_index()
-        last2 = df.groupby("customer_ID")[num_features].nth(-2).sort_index()
-        diff = (last1 / last2).replace([np.inf, -np.inf], np.nan).add_suffix("-last_frac")
-        return diff
-
-    # last_abs_frac
-    def agg_last_abs_frac(df, num_features):
-        last1 = df.groupby("customer_ID")[num_features].nth(-1).sort_index()
-        last2 = df.groupby("customer_ID")[num_features].nth(-2).sort_index()
-        diff = (last1.abs() / last2.abs()).replace([np.inf, -np.inf], np.nan).add_suffix("-last_abs_frac")
+    def agg_last_log_diff(df, num_features):
+        last1 = df.groupby("customer_ID")[num_features].nth(-1).apply(np.log1p).replace([np.inf, -np.inf], np.nan).sort_index()
+        last2 = df.groupby("customer_ID")[num_features].nth(-2).apply(np.log1p).replace([np.inf, -np.inf], np.nan).sort_index()
+        diff = (last1 - last2).add_suffix("-last_log_diff")
         return diff
 
     with trace.timer("aggregate num features"):
@@ -753,17 +721,11 @@ def aggregate_features(df):
         del last_diff
         gc.collect()
 
-        # # last / shift1
-        # last_frac = agg_last_frac(df, num_columns)
-        # results.append(last_frac.sort_index())
-        # del last_frac
-        # gc.collect()
-
-        # # abs(last) / abs(shift1)
-        # last_abs_frac = agg_last_abs_frac(df, num_columns)
-        # results.append(last_abs_frac.sort_index())
-        # del last_abs_frac
-        # gc.collect()
+        # log(last + 1) - log(shift1 + 1)
+        last_log_diff = agg_last_log_diff(df, num_columns)
+        results.append(last_log_diff)
+        del last_log_diff
+        gc.collect()
 
     # cat
     with trace.timer("aggregate cat features"):
@@ -801,7 +763,7 @@ def make_features(df, num_features, cat_features):
     # transform last num features to round2
     with trace.timer("make round2 features"):
         for col in num_features:
-            if (col.endswith("-last") or col.endswith("-last_diff")) and pd.api.types.is_float_dtype(df[col]):
+            if col.endswith("-last") or col.endswith("-last_diff"):
                 df[col] = df[col].round(2)
 
     # the difference between last and mean
@@ -811,16 +773,12 @@ def make_features(df, num_features, cat_features):
                 col_base = col.split("-")[0]
                 # diff
                 feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff"))
-                # # frac
-                # feature_list.append(
-                #     (df[f"{col_base}-last"] / df[f"{col_base}-mean"]).replace([np.inf, -np.inf], np.nan).rename(f"{col_base}-last_mean_frac")
-                # )
-                # # abs frac
-                # feature_list.append(
-                #     (df[f"{col_base}-last"].abs() / df[f"{col_base}-mean"].abs())
-                #     .replace([np.inf, -np.inf], np.nan)
-                #     .rename(f"{col_base}-last_mean_abs_frac")
-                # )
+                # log_diff
+                feature_list.append(
+                    (df[f"{col_base}-last"].apply(np.log1p) - df[f"{col_base}-mean"].apply(np.log1p))
+                    .replace([np.inf, -np.inf], np.nan)
+                    .rename(f"{col_base}-last_mean_log_diff")
+                )
 
     ############################################################
     # use GPU to make features
@@ -907,7 +865,7 @@ def fill_nan_values(df, num_features, cat_features):
             df[col] = df[col].fillna(m + 1).astype(np.int16)
 
         # num features
-        df.fillna(-9999, inplace=True)
+        df.fillna(-999, inplace=True)
         df[num_features] = df[num_features].astype(np.float32)
 
     return df, num_features, cat_features
@@ -929,37 +887,16 @@ def prepare_data(debug):
         private_ids = np.random.choice(private_ids, size=1000, replace=False)
         test_df = test_df.loc[test_df["customer_ID"].isin(np.concatenate([public_ids, private_ids]))].reset_index(drop=True)
 
-    # split test to public and private
-    public_df = test_df.loc[test_df["customer_ID"].isin(public_ids)]
-    private_df = test_df.loc[test_df["customer_ID"].isin(private_ids)]
-    del test_df
+    df = pd.concat([train_df, test_df]).reset_index(drop=True)
+    del train_df, test_df
     gc.collect()
 
     # preprocessing
-    train_df = preprocess(train_df)
-    public_df = preprocess(public_df)
-    private_df = preprocess(private_df)
+    preprocess(df)
     train_labels["customer_ID"] = pd.Categorical(train_labels["customer_ID"], ordered=True)
 
     # aggregation
-    print("#" * 10, "train", "#" * 10)
-    train_df, num_features, cat_features = aggregate_features(train_df)
-    gc.collect()
-
-    print("#" * 10, "public", "#" * 10)
-    public_df, _, _ = aggregate_features(public_df)
-    gc.collect()
-
-    print("#" * 10, "private", "#" * 10)
-    private_df, _, _ = aggregate_features(private_df)
-    gc.collect()
-
-    print("#" * 30)
-
-    # concat
-    df = pd.concat([train_df, public_df, private_df])
-    del train_df, public_df, private_df
-    gc.collect()
+    df, num_features, cat_features = aggregate_features(df)
 
     # make features
     df, num_features, cat_features = make_features(df, num_features, cat_features)
@@ -982,17 +919,7 @@ def prepare_data(debug):
 # ====================================================
 # training
 # ====================================================
-def train_fold(
-    fold,
-    X_train,
-    y_train,
-    X_valid,
-    y_valid,
-    sample_weight_train,
-    sample_weight_valid,
-    num_features,
-    cat_features,
-):
+def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_features):
     trace = Trace()
     model = get_model(PARAMS)
 
@@ -1003,8 +930,6 @@ def train_fold(
             y_train=y_train,
             X_valid=X_valid,
             y_valid=y_valid,
-            sample_weight_train=sample_weight_train,
-            sample_weight_valid=sample_weight_valid,
             num_features=num_features,
             cat_features=cat_features,
         )
@@ -1054,17 +979,12 @@ def training_main():
         y_train = train_labels.iloc[train_idx]["target"]
         y_valid = train_labels.iloc[valid_idx]["target"]
 
-        sample_weight_train = None
-        sample_weight_valid = None
-
         prediction = train_fold(
             fold,
             X_train,
             y_train,
             X_valid,
             y_valid,
-            sample_weight_train,
-            sample_weight_valid,
             num_features,
             cat_features,
         )
