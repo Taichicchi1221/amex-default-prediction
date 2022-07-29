@@ -373,7 +373,7 @@ PARAMS = {
         "params": {
             "T_0": 1,
             "T_mult": 2,
-            "verbose": False,
+            "verbose": True,
         },
     },
     "loss": {
@@ -846,8 +846,6 @@ class BaseModelTransformer(torch.nn.Module):
 # train fold
 # ====================================================
 def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_features):
-    print("#" * 30, f"fold{fold}", "#" * 30)
-
     train_ds = Dataset(X_train, y_train)
     valid_ds = Dataset(X_valid, y_valid)
 

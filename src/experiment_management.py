@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "exp028"
-EXPERIMENT_DESC = "lgbmdart"
+EXPERIMENT_NAME = "seq_exp001"
+EXPERIMENT_DESC = "transformer"
 
 # ====================================================
 # util
