@@ -14,16 +14,16 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-WORKFILE_NAME = "customer_aggregation_work.py"
-DEPENDENT_FILES = ["utils.py"]
-MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+# WORKFILE_NAME = "customer_aggregation_work.py"
+# DEPENDENT_FILES = ["utils.py"]
+# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 ########################## customer aggregation ##########################
 
 
 ########################## sequential model ##########################
-# WORKFILE_NAME = "sequential_model_work.py"
-# DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
-# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+WORKFILE_NAME = "sequential_model_work.py"
+DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
+MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## sequential model ##########################
 
 
@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "exp027"
-EXPERIMENT_DESC = "lgbmdart + date-agg + drop(R_1, B_29) + after-pay-features"
+EXPERIMENT_NAME = "exp028"
+EXPERIMENT_DESC = "lgbmdart"
 
 # ====================================================
 # util

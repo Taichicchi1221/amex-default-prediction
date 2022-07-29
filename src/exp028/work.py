@@ -700,7 +700,6 @@ def aggregate_features(df):
         date_first1 = df.groupby("customer_ID")["S_2"].nth(0).sort_index()
         date_agg_result = pd.concat(
             [
-                df.groupby("customer_ID")["S_2"].agg("last").rename("S_2-last_day").sort_index().dt.weekday.astype(np.int16),
                 df.groupby("customer_ID")["S_2"].agg("last").rename("S_2-last_day").sort_index().dt.day.astype(np.int16),
                 (date_last1 - date_last2).rename("S_2-last_diff").dt.days.fillna(0).astype(np.int16),
                 (date_last1 - date_first1).rename("S_2-last_first_diff").dt.days.fillna(0).astype(np.int16),
@@ -721,13 +720,6 @@ def aggregate_features(df):
         diff = (last1 - last2).add_suffix("-last_diff").astype(pd.Float32Dtype())
         return diff
 
-    # last_diff
-    def agg_last_first_diff(df, num_features):
-        last1 = df.groupby("customer_ID")[num_features].nth(-1).sort_index()
-        last2 = df.groupby("customer_ID")[num_features].nth(0).sort_index()
-        diff = (last1 - last2).add_suffix("-last_first_diff").astype(pd.Float32Dtype())
-        return diff
-
     with trace.timer("aggregate num features"):
         num_columns = [c for c in df.columns if c not in CAT_FEATURES + ["customer_ID", "S_2"]]
         agg_names = [
@@ -745,12 +737,6 @@ def aggregate_features(df):
         last_diff = agg_last_diff(df, num_columns)
         results.append(last_diff.sort_index())
         del last_diff
-        gc.collect()
-
-        # last - first
-        last_first_diff = agg_last_first_diff(df, num_columns)
-        results.append(last_first_diff.sort_index())
-        del last_first_diff
         gc.collect()
 
     # cat

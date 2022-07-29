@@ -306,23 +306,29 @@ PARAMS = {
     "model": {
         "type": "Transformer",
         "params": {
-            "encoder_num_layers": 6,
-            "encoder_hidden_size": 512,
-            "encoder_dropout": 0.00,
-            "encoder_nhead": 8,  # transformer
+            "encoder_num_blocks": 8,
+            "encoder_dropout_list": [0.25] * 8,  # len == encoder_num_blocks
+            "encoder_d_model_list": [256] * 8,  # Transformer # len == encoder_num_blocks
+            "encoder_nhead_list": [8] * 8,  # Transformer # len == encoder_num_blocks
+            # "encoder_hidden_size_list": [64, 64],  # LSTM, GRU, # len == encoder_num_blocks
+            # "encoder_num_layers_list": [1, 1],  # LSTM, GRU, len == encoder_num_blocks
             # "encoder_bidirectional": False,  # LSTM, GRU
             "classifier_hidden_size": 128,
-            "classifier_dropout": 0.00,
+            "classifier_dropout": 0.25,
         },
     },
     "trainer": {
-        "max_epochs": 30,
+        "max_epochs": 100,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
         "accumulate_grad_batches": 1,
         "precision": 32,
         "gpus": 1,
+    },
+    "mixup": {
+        "use": False,
+        "alpha": 0.5,
     },
     "dataloader": {
         "train": {
@@ -350,17 +356,23 @@ PARAMS = {
     "optimizer": {
         "cls": torch.optim.AdamW,
         "params": {
-            "lr": 1.0e-04,
+            "lr": 2.0e-05,
             "weight_decay": 0.00,
         },
     },
     "scheduler": {
-        "cls": torch.optim.lr_scheduler.ReduceLROnPlateau,
+        # "cls": torch.optim.lr_scheduler.ReduceLROnPlateau,
+        # "params": {
+        #     "mode": "max",  # ReduceLROnPlateau
+        #     "factor": 0.2,  # ReduceLROnPlateau
+        #     "patience": 2,  # ReduceLROnPlateau
+        #     "eps": 1.0e-06,  # ReduceLROnPlateau
+        #     "verbose": True,
+        # },
+        "cls": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
         "params": {
-            "mode": "max",  # ReduceLROnPlateau
-            "factor": 0.2,  # ReduceLROnPlateau
-            "patience": 2,  # ReduceLROnPlateau
-            "eps": 1.0e-06,  # ReduceLROnPlateau
+            "T_0": 5,
+            "T_mult": 2,
             "verbose": True,
         },
     },
@@ -390,14 +402,23 @@ def plot_distribution(ypred, ytrue, path):
     plt.close()
 
 
-def plot_training_curve(train_history, valid_history, filename):
-    plt.figure()
-    legends = []
-    plt.plot(range(len(train_history)), train_history, marker=".", color="skyblue")
-    legends.append("train")
-    plt.plot(range(len(valid_history)), valid_history, marker=".", color="orange")
-    legends.append("valid")
-    plt.legend(legends)
+def plot_training_curve(train_history, valid_history, lr_history, filename):
+    fig = plt.figure()
+    ax1: plt.Axes = fig.add_subplot()
+    ax2: plt.Axes = ax1.twinx()
+
+    ax1.plot(range(len(train_history)), train_history, marker=".", color="skyblue", label="train")
+    ax1.plot(range(len(valid_history)), valid_history, marker=".", color="orange", label="valid")
+    ax1.set_xlabel("epoch")
+    ax1.set_ylabel("metric")
+
+    ax2.plot(range(len(lr_history)), lr_history, marker="x", linestyle="dashdot", color="gray", label="lr")
+    ax2.set_ylabel("lr")
+
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc="lower right")
+
     plt.savefig(filename)
     plt.close()
 
@@ -529,14 +550,37 @@ class Dataset(torch.utils.data.Dataset):
         x = torch.tensor(self.data[idx], dtype=torch.float)
 
         if self.labels is None:
-            return x
+            return x, torch.tensor(0)
 
         y = torch.tensor(self.labels[idx], dtype=torch.float)
         return x, y
 
 
 def get_dataloader(dataset, type_):
+    if PARAMS["mixup"]["use"] and type_ == "train":
+        print(f"[INFO] use mixup to {type_} dataloader")
+        collate_fn = MixupCollate(PARAMS["mixup"]["alpha"])
+        return torch.utils.data.DataLoader(dataset, collate_fn=collate_fn, **PARAMS["dataloader"][type_])
+
     return torch.utils.data.DataLoader(dataset, **PARAMS["dataloader"][type_])
+
+
+class MixupCollate:
+    def __init__(self, alpha):
+        self.alpha = alpha
+
+    def __call__(self, batch):
+        assert len(batch) % 2 == 0, "Batch size should be even when using this"
+        x, y = list(zip(*batch))
+        lam = torch.tensor(np.random.beta(self.alpha, self.alpha))
+
+        x = torch.stack(x)
+        x = x * lam + x.flip(0) * (1.0 - lam)
+
+        y = torch.stack(y)
+        y = y * lam + y.flip(0) * (1.0 - lam)
+
+        return x, y
 
 
 # ====================================================
@@ -588,6 +632,7 @@ class Model(pl.LightningModule):
         self.history = {
             "train_metric": [],
             "valid_metric": [],
+            "lr": [],
         }
 
     def forward(self, x):
@@ -655,6 +700,7 @@ class Model(pl.LightningModule):
 
     def on_train_epoch_end(self) -> None:
         self.history["train_metric"].append(self.train_metric.compute().detach().cpu().numpy())
+        self.history["lr"].append(self.optimizers(False).param_groups[0]["lr"])
         return super().on_train_epoch_end()
 
     def on_validation_epoch_end(self) -> None:
@@ -666,25 +712,31 @@ class BaseModelGRU(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_hidden_size,
-        encoder_dropout,
+        encoder_num_blocks,
+        encoder_num_layers_list,
+        encoder_hidden_size_list,
+        encoder_dropout_list,
         encoder_bidirectional,
         classifier_hidden_size,
         classifier_dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.encoder = nn.GRU(
-            input_size=input_dim,
-            hidden_size=encoder_hidden_size,
-            num_layers=encoder_num_layers,
-            bidirectional=encoder_bidirectional,
-            dropout=encoder_dropout,
-            batch_first=True,
+        self.encoders = nn.ModuleList(
+            [
+                nn.GRU(
+                    input_size=input_dim if i == 0 else encoder_hidden_size_list[i - 1],
+                    hidden_size=encoder_hidden_size_list[i],
+                    num_layers=encoder_num_layers_list[i],
+                    dropout=encoder_dropout_list[i],
+                    bidirectional=encoder_bidirectional,
+                    batch_first=True,
+                )
+                for i in range(encoder_num_blocks)
+            ]
         )
 
-        output_dim = encoder_hidden_size * (2 if encoder_bidirectional else 1)
+        output_dim = encoder_hidden_size_list[-1] * (2 if encoder_bidirectional else 1)
 
         self.classifier = nn.Sequential(
             nn.Linear(output_dim, classifier_hidden_size),
@@ -695,8 +747,9 @@ class BaseModelGRU(torch.nn.Module):
         )
 
     def forward(self, x):
-        output, _ = self.encoder(x)
-        output = self.classifier(output[:, -1, :])
+        for encoder in self.encoders:
+            x, _ = encoder(x)
+        output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
 
@@ -704,25 +757,31 @@ class BaseModelLSTM(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_hidden_size,
-        encoder_dropout,
+        encoder_num_blocks,
+        encoder_num_layers_list,
+        encoder_hidden_size_list,
+        encoder_dropout_list,
         encoder_bidirectional,
         classifier_hidden_size,
         classifier_dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.encoder = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=encoder_hidden_size,
-            num_layers=encoder_num_layers,
-            bidirectional=encoder_bidirectional,
-            dropout=encoder_dropout,
-            batch_first=True,
+        self.encoders = nn.ModuleList(
+            [
+                nn.LSTM(
+                    input_size=input_dim if i == 0 else encoder_hidden_size_list[i - 1],
+                    hidden_size=encoder_hidden_size_list[i],
+                    num_layers=encoder_num_layers_list[i],
+                    dropout=encoder_dropout_list[i],
+                    bidirectional=encoder_bidirectional,
+                    batch_first=True,
+                )
+                for i in range(encoder_num_blocks)
+            ]
         )
 
-        output_dim = encoder_hidden_size * (2 if encoder_bidirectional else 1)
+        output_dim = encoder_hidden_size_list[-1] * (2 if encoder_bidirectional else 1)
 
         self.classifier = nn.Sequential(
             nn.Linear(output_dim, classifier_hidden_size),
@@ -733,64 +792,42 @@ class BaseModelLSTM(torch.nn.Module):
         )
 
     def forward(self, x):
-        output, _ = self.encoder(x)
-        output = self.classifier(output[:, -1, :])
+        for encoder in self.encoders:
+            x, _ = encoder(x)
+        output = self.classifier(x[:, -1, :])
         return output.view(-1)
-
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Tensor, shape [seq_len, batch_size, embedding_dim]
-        """
-        x = x + self.pe[: x.size(0)]
-        return self.dropout(x)
 
 
 class BaseModelTransformer(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_hidden_size,
-        encoder_nhead,
-        encoder_dropout,
+        encoder_num_blocks,
+        encoder_d_model_list,
+        encoder_nhead_list,
+        encoder_dropout_list,
         classifier_hidden_size,
         classifier_dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.linear = nn.Linear(input_dim, encoder_hidden_size)
-        self.positional_encoder = PositionalEncoding(
-            d_model=encoder_hidden_size,
-            dropout=0.0,
-            max_len=13,
-        )
-        self.encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(
-                d_model=encoder_hidden_size,
-                nhead=encoder_nhead,
-                dropout=encoder_dropout,
-                activation=F.gelu,
-                batch_first=True,
-            ),
-            num_layers=encoder_num_layers,
+        self.linear = nn.Linear(input_dim, encoder_d_model_list[0])
+
+        self.encoders = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=encoder_d_model_list[i],
+                    nhead=encoder_nhead_list[i],
+                    dropout=encoder_dropout_list[i],
+                    activation=F.gelu,
+                    batch_first=True,
+                )
+                for i in range(encoder_num_blocks)
+            ]
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(encoder_hidden_size, classifier_hidden_size),
+            nn.Linear(encoder_d_model_list[-1], classifier_hidden_size),
             nn.BatchNorm1d(classifier_hidden_size),
             nn.Dropout(classifier_dropout),
             nn.SiLU(),
@@ -799,8 +836,9 @@ class BaseModelTransformer(torch.nn.Module):
 
     def forward(self, x):
         x = self.linear(x)
-        x = self.encoder(x)[:, -1, :]
-        output = self.classifier(x)
+        for encoder in self.encoders:
+            x = encoder(x)
+        output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
 
@@ -814,7 +852,7 @@ def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_featu
     train_dl = get_dataloader(train_ds, type_="train")
     valid_dl = get_dataloader(valid_ds, type_="valid")
 
-    CHECKPOINT_NAME = f"fold{fold}_model_" "{epoch:02d}_{valid_metric:.3f}"
+    CHECKPOINT_NAME = f"fold{fold}_model_" "{epoch:03d}_{valid_metric:.4f}"
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         filename=CHECKPOINT_NAME,
         dirpath=".",
@@ -849,6 +887,7 @@ def train_fold(fold, X_train, y_train, X_valid, y_valid, num_features, cat_featu
     plot_training_curve(
         model.history["train_metric"],
         model.history["valid_metric"],
+        model.history["lr"],
         filename=f"training_curve_fold{fold}.png",
     )
 
@@ -873,7 +912,7 @@ def inference(customer_ids, X, model_path):
 
     predictions_list = []
 
-    for x in tqdm(dl, desc="inference", total=len(dl)):
+    for x, _ in tqdm(dl, desc="inference", total=len(dl)):
         x = x.to(device)
         logits = model(x)
         predictions_list.append(logits.detach().cpu().numpy())
