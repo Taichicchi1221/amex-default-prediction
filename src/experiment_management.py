@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp003"
-EXPERIMENT_DESC = "transformer(QuantileTransformer(1000))"
+EXPERIMENT_NAME = "seq_exp004"
+EXPERIMENT_DESC = "transformer(no scaling)"
 
 # ====================================================
 # util
