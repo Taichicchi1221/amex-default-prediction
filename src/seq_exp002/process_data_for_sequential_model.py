@@ -21,7 +21,7 @@ from abc import ABCMeta, abstractmethod
 
 import pickle
 import json
-from sklearn.preprocessing import QuantileTransformer, RobustScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 import yaml
 
 from tqdm.auto import tqdm
@@ -176,15 +176,7 @@ def scale_features(df, num_features, cat_features, type="train"):
 
     with trace.timer("scale features"):
         if type == "train":
-
-            # scaler = StandardScaler(copy=True)
-            # scaler = RobustScaler(copy=True)
-            scaler = QuantileTransformer(
-                n_quantiles=1000,
-                output_distribution="normal",
-                copy=True,
-            )
-
+            scaler = RobustScaler(copy=True)
             scaler.fit(df[num_features].astype(np.float32))
             joblib.dump(scaler, "scaler.pkl")
         elif type in ("public", "private"):
