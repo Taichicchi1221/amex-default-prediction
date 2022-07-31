@@ -35,7 +35,7 @@ MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 
 
 EXPERIMENT_NAME = "seq_exp008"
-EXPERIMENT_DESC = "transformer modified architecture"
+EXPERIMENT_DESC = "transformer"
 
 # ====================================================
 # util

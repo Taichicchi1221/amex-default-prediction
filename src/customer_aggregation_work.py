@@ -303,53 +303,53 @@ R_FEATURES = [
     "R_28",
 ]
 
-PARAMS = {
-    "type": "LightGBM",
-    "num_boost_round": 100000,
-    "early_stopping_rounds": 1500,
-    "seed": SEED,
-    "n_splits": N_SPLITS,
-    "params": {
-        "objective": "binary",
-        "metric": "None",
-        "boosting_type": "dart",  # {gbdt, dart}
-        "learning_rate": 0.01,
-        "num_leaves": 128,
-        "min_data_in_leaf": 40,
-        "reg_alpha": 1.0,
-        "reg_lambda": 2.0,
-        "feature_fraction": 0.20,
-        "bagging_freq": 10,
-        "bagging_fraction": 0.50,
-        "seed": SEED,
-        "bagging_seed": SEED,
-        "feature_fraction_seed": SEED,
-        "verbose": -1,
-        "n_jobs": -1,
-    },
-}
-
-
 # PARAMS = {
-#     "type": "XGBoost",
+#     "type": "LightGBM",
 #     "num_boost_round": 100000,
 #     "early_stopping_rounds": 1500,
 #     "seed": SEED,
 #     "n_splits": N_SPLITS,
 #     "params": {
-#         "objective": "binary:logitraw",
-#         "booster": "gbtree",
-#         "eval_metric": ["auc"],
-#         "learning_rate": 0.03,
-#         "max_depth": 4,
-#         "subsample": 0.8,
-#         "colsample_bytree": 0.6,
-#         "tree_method": "gpu_hist",
-#         "predictor": "gpu_predictor",
+#         "objective": "binary",
+#         "metric": "None",
+#         "boosting_type": "dart",  # {gbdt, dart}
+#         "learning_rate": 0.01,
+#         "num_leaves": 128,
+#         "min_data_in_leaf": 40,
+#         "reg_alpha": 1.0,
+#         "reg_lambda": 2.0,
+#         "feature_fraction": 0.20,
+#         "bagging_freq": 10,
+#         "bagging_fraction": 0.50,
+#         "seed": SEED,
+#         "bagging_seed": SEED,
+#         "feature_fraction_seed": SEED,
+#         "verbose": -1,
 #         "n_jobs": -1,
-#         "random_state": SEED,
 #     },
 # }
+
+
+PARAMS = {
+    "type": "XGBoost",
+    "num_boost_round": 100000,
+    "early_stopping_rounds": 1500,
+    "seed": SEED,
+    "n_splits": N_SPLITS,
+    "params": {
+        "objective": "binary:logitraw",
+        "booster": "gbtree",
+        "eval_metric": ["auc"],
+        "learning_rate": 0.03,
+        "max_depth": 4,
+        "subsample": 0.6,
+        "colsample_bytree": 0.5,
+        "tree_method": "gpu_hist",
+        "predictor": "gpu_predictor",
+        "n_jobs": -1,
+        "random_state": SEED,
+    },
+}
 
 
 # ====================================================
@@ -503,7 +503,7 @@ class XGBoostModel(BaseModelWrapper):
 
     def plot_importances(self, path):
         fig, ax = plt.subplots(figsize=(10, 25))
-        plt.subplots_adjust(left=0.25, bottom=0.05, top=0.95)
+        plt.subplots_adjust(left=0.45, bottom=0.05, top=0.95)
         xgb.plot_importance(
             self.model,
             importance_type="gain",
@@ -588,7 +588,7 @@ class LightGBMModel(BaseModelWrapper):
 
     def plot_importances(self, path):
         fig, ax = plt.subplots(figsize=(10, 25))
-        plt.subplots_adjust(left=0.25, bottom=0.05, top=0.95)
+        plt.subplots_adjust(left=0.45, bottom=0.05, top=0.95)
         lgb.plot_importance(
             self.model,
             importance_type="gain",
@@ -668,6 +668,15 @@ def preprocess(df: pd.DataFrame):
     # S_2
     df["S_2"] = pd.to_datetime(df["S_2"], format="%Y-%m-%d")
 
+    # D_64
+    df["D_64"] = df["D_64"].replace(1, pd.NA)
+
+    # D_66
+    df["D_66"] = df["D_66"].replace(0, pd.NA)
+
+    # D_68
+    df["D_68"] = df["D_68"].replace(0, pd.NA)
+
     # compute "after pay" features
     values = []
     for bcol in ["B_11", "B_14", "B_17"] + ["D_39", "D_131"] + ["S_16", "S_23"]:
@@ -688,7 +697,7 @@ def preprocess(df: pd.DataFrame):
     return df
 
 
-def aggregate_features(df):
+def aggregate_features(df, filename):
     trace = Trace()
 
     results = []
@@ -700,7 +709,7 @@ def aggregate_features(df):
         date_first1 = df.groupby("customer_ID")["S_2"].nth(0).sort_index()
         date_agg_result = pd.concat(
             [
-                df.groupby("customer_ID")["S_2"].agg("last").rename("S_2-last_day").sort_index().dt.weekday.astype(np.int16),
+                df.groupby("customer_ID")["S_2"].agg("last").rename("S_2-last_weekday").sort_index().dt.weekday.astype(np.int16),
                 df.groupby("customer_ID")["S_2"].agg("last").rename("S_2-last_day").sort_index().dt.day.astype(np.int16),
                 (date_last1 - date_last2).rename("S_2-last_diff").dt.days.fillna(0).astype(np.int16),
                 (date_last1 - date_first1).rename("S_2-last_first_diff").dt.days.fillna(0).astype(np.int16),
@@ -714,20 +723,6 @@ def aggregate_features(df):
         results.append(date_agg_result)
 
     # num
-    # last_diff
-    def agg_last_diff(df, num_features):
-        last1 = df.groupby("customer_ID")[num_features].nth(-1).sort_index()
-        last2 = df.groupby("customer_ID")[num_features].nth(-2).sort_index()
-        diff = (last1 - last2).add_suffix("-last_diff").astype(pd.Float32Dtype())
-        return diff
-
-    # last_diff
-    def agg_last_first_diff(df, num_features):
-        last1 = df.groupby("customer_ID")[num_features].nth(-1).sort_index()
-        last2 = df.groupby("customer_ID")[num_features].nth(0).sort_index()
-        diff = (last1 - last2).add_suffix("-last_first_diff").astype(pd.Float32Dtype())
-        return diff
-
     with trace.timer("aggregate num features"):
         num_columns = [c for c in df.columns if c not in CAT_FEATURES + ["customer_ID", "S_2"]]
         agg_names = [
@@ -735,22 +730,72 @@ def aggregate_features(df):
             "max",
             "min",
             "std",
+            "first",
             "last",
         ]
         num_agg_result = df.groupby("customer_ID")[num_columns].agg(agg_names).astype(pd.Float32Dtype())
         num_agg_result.columns = ["-".join(c) for c in num_agg_result.columns]
         results.append(num_agg_result.sort_index())
 
+        # transform last num features to round2
+        for col in num_agg_result.columns:
+            if (col.endswith("-last") or col.endswith("-first") or col.endswith("-max") or col.endswith("-min")) and pd.api.types.is_float_dtype(
+                num_agg_result[col]
+            ):
+                num_agg_result[col] = num_agg_result[col].round(2)
+
         # last - shift1
-        last_diff = agg_last_diff(df, num_columns)
+        last_diff = df.groupby("customer_ID")[num_columns].nth(-1) - df.groupby("customer_ID")[num_columns].nth(-2)
+        last_diff.columns = [f"{col}-last_diff" for col in num_columns]
         results.append(last_diff.sort_index())
         del last_diff
         gc.collect()
 
+        # last / shift1
+        last_frac = (
+            (df.groupby("customer_ID")[num_columns].nth(-1) / df.groupby("customer_ID")[num_columns].nth(-2))
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        last_frac.columns = [f"{col}-last_frac" for col in num_columns]
+        results.append(last_frac.sort_index())
+        del last_frac
+        gc.collect()
+
+        # last - mean
+        last_mean_diff = df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("mean")
+        last_mean_diff.columns = [f"{col}-last_mean_diff" for col in num_columns]
+        results.append(last_mean_diff.sort_index())
+        del last_mean_diff
+        gc.collect()
+
+        # last / mean
+        last_mean_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("mean"))
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        last_mean_frac.columns = [f"{col}-last_mean_frac" for col in num_columns]
+        results.append(last_mean_frac.sort_index())
+        del last_mean_frac
+        gc.collect()
+
         # last - first
-        last_first_diff = agg_last_first_diff(df, num_columns)
+        last_first_diff = df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("first")
+        last_first_diff.columns = [f"{col}-last_first_diff" for col in num_columns]
         results.append(last_first_diff.sort_index())
         del last_first_diff
+        gc.collect()
+
+        # last / first
+        last_first_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("first"))
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        last_first_frac.columns = [f"{col}-last_first_frac" for col in num_columns]
+        results.append(last_first_frac.sort_index())
+        del last_first_frac
         gc.collect()
 
     # cat
@@ -778,27 +823,27 @@ def aggregate_features(df):
         cat_features = [f"{col}-last" for col in cat_columns]
         num_features = [col for col in agg_result.columns if col not in cat_features]
 
-    return agg_result, num_features, cat_features
+    with trace.timer("save result"):
+        # save results
+        agg_result.to_pickle(filename)
+        del agg_result
+        gc.collect()
+
+    return num_features, cat_features
 
 
-def make_features(df, num_features, cat_features):
+def make_features(filenames, output_filename, num_features, cat_features):
     trace = Trace()
 
+    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last")]
+    USE_CAT_COLS = [col for col in cat_features if col.endswith("-last")]
+
+    USE_COLS = USE_NUM_COLS + USE_CAT_COLS
+
+    with trace.timer("make all df"):
+        df = pd.concat([pd.read_pickle(filename)[USE_COLS] for filename in filenames], axis=0)
+
     feature_list = []
-
-    # transform last num features to round2
-    with trace.timer("make round2 features"):
-        for col in num_features:
-            if (col.endswith("-last") or col.endswith("-last_diff")) and pd.api.types.is_float_dtype(df[col]):
-                df[col] = df[col].round(2)
-
-    # the difference between last and mean
-    with trace.timer("make difference features"):
-        for col in num_features:
-            if col.endswith("-last"):
-                col_base = col.split("-")[0]
-                # diff
-                feature_list.append((df[f"{col_base}-last"] - df[f"{col_base}-mean"]).rename(f"{col_base}-last_mean_diff").astype(pd.Float32Dtype()))
 
     ############################################################
     # use GPU to make features
@@ -806,10 +851,24 @@ def make_features(df, num_features, cat_features):
 
     ### prepare features
     with trace.timer("scaling, fillna, to GPU"):
-        features = pd.get_dummies(df, columns=cat_features)
-        features[num_features] = StandardScaler(copy=False).fit_transform(features[num_features].astype(np.float32))
+        # cat
+        cat = pd.get_dummies(df[USE_CAT_COLS], columns=USE_CAT_COLS)
+        USE_CAT_COLS = list(cat.columns)
+        USE_COLS = USE_NUM_COLS + USE_CAT_COLS
+
+        # num
+        num = StandardScaler(copy=False).fit_transform(df[USE_NUM_COLS].astype(np.float32))
+
+        features = pd.concat(
+            [
+                pd.DataFrame(cat, index=df.index, columns=USE_CAT_COLS),
+                pd.DataFrame(num, index=df.index, columns=USE_NUM_COLS),
+            ],
+            axis=1,
+        )
         features.fillna(0, inplace=True)
         features = cudf.from_pandas(features)
+        del df, cat, num
         gc.collect()
 
     ### kmeans
@@ -834,121 +893,156 @@ def make_features(df, num_features, cat_features):
             index=features.index.to_numpy(),
         )
         feature_list.append(pca_features)
+        num_features.extend(pca_features.columns)
 
     ### KNN
-    # with trace.timer("knn"):
-    #     USECOLS = [col for col in features.columns if "last" in col or "mean" in col]
-    #     N_NEIGHBORS = 30
-    #     METRIC = "euclidean"
-    #     knn = cuml.NearestNeighbors(
-    #         n_neighbors=N_NEIGHBORS,
-    #         metric=METRIC,
-    #         verbose=True,
-    #         output_type="numpy",
-    #     )
-    #     knn.fit(features[USECOLS])
-    #     neighbors = knn.kneighbors(features[USECOLS], return_distance=False).astype(np.uint16)
-    #     names = []
-    #     arrays = []
-    #     for col in tqdm(USECOLS, desc="nearest neighbors"):
-    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_max")
-    #         arrays.append(np.nanmax(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
-    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
-    #         arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
+    with trace.timer("knn"):
+        N_NEIGHBORS = 15
+        METRIC = "euclidean"
+        knn = cuml.NearestNeighbors(
+            n_neighbors=N_NEIGHBORS,
+            metric=METRIC,
+            verbose=True,
+            output_type="numpy",
+        )
+        knn.fit(features[USE_COLS])
+        neighbors = knn.kneighbors(features[USE_COLS], return_distance=False).astype(np.uint16)
+        names = []
+        arrays = []
+        for col in tqdm(USE_COLS, desc="nearest neighbors"):
+            names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
+            arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
 
-    #     feature_list.append(
-    #         pd.DataFrame(
-    #             np.stack(arrays, axis=1),
-    #             columns=names,
-    #             index=df.index,
-    #         )
-    #     )
+        feature_list.append(
+            pd.DataFrame(
+                np.stack(arrays, axis=1),
+                columns=names,
+                index=features.index.to_numpy(),
+            )
+        )
+        num_features.extend(names)
 
     del features
     gc.collect()
 
     with trace.timer("concat results"):
-        df = pd.concat([df] + feature_list, axis=1)
+        additive_features = pd.concat(feature_list, axis=1)
 
-    num_features = [col for col in df.columns if col not in cat_features]
+    with trace.timer("save result"):
+        additive_features.to_pickle(output_filename)
+        del additive_features
+        gc.collect()
 
-    return df, num_features, cat_features
+    return num_features, cat_features
 
 
-def fill_nan_values(df, num_features, cat_features):
+def process_input(filenames, additive_features_filename, num_features, cat_features):
     trace = Trace()
-    # process nan values
-    with trace.timer("process nan values"):
-        # cat features
-        for col in cat_features:
-            m = df[col].max()
-            df[col] = df[col].fillna(m + 1).astype(np.int16)
+    additive_features = pd.read_pickle(additive_features_filename)
+    for filename in filenames:
+        print("#" * 10, filename, "#" * 10)
+        df = pd.read_pickle(filename)
+        df = pd.concat([df, additive_features], axis=1, join="inner")
 
-        # num features
-        df.fillna(-9999, inplace=True)
-        df[num_features] = df[num_features].astype(np.float32)
+        # process nan values
+        with trace.timer("process nan values"):
+            # cat features
+            for col in cat_features:
+                m = df[col].max()
+                df[col] = df[col].fillna(m + 1).astype(np.int16)
 
-    return df, num_features, cat_features
+            # num features
+            df.fillna(-9999, inplace=True)
+            df[num_features] = df[num_features].astype(np.float32)
+
+        df.sort_index().to_pickle(filename)
+        print(f"{filename}: df.shape={df.shape}")
+
+    return num_features, cat_features
 
 
 def prepare_data(debug):
+    ### train
     train_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "train.npy"), allow_pickle=True)
-    public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
-    private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
     train_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
-    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
-    train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
-
     if debug:
         train_ids = np.random.choice(train_ids, size=1000, replace=False)
         train_df = train_df.loc[train_df["customer_ID"].isin(train_ids)].reset_index(drop=True)
-        train_labels = train_labels.loc[train_labels["customer_ID"].isin(train_ids)].reset_index(drop=True)
-        public_ids = np.random.choice(public_ids, size=1000, replace=False)
-        private_ids = np.random.choice(private_ids, size=1000, replace=False)
-        test_df = test_df.loc[test_df["customer_ID"].isin(np.concatenate([public_ids, private_ids]))].reset_index(drop=True)
 
-    # split test to public and private
+    # preprocessing
+    train_df = preprocess(train_df)
+
+    # aggregate
+    print("#" * 10, "train", "#" * 10)
+    num_features, cat_features = aggregate_features(train_df, filename="train.pkl")
+
+    ### public
+    public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
+    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
+    if debug:
+        public_ids = np.random.choice(public_ids, size=1000, replace=False)
+
     public_df = test_df.loc[test_df["customer_ID"].isin(public_ids)]
+    del test_df
+    gc.collect()
+
+    # preprocessing
+    public_df = preprocess(public_df)
+
+    # aggregate
+    print("#" * 10, "public", "#" * 10)
+    _, _ = aggregate_features(public_df, filename="public.pkl")
+
+    ### ptivate
+    private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
+    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
+    if debug:
+        private_ids = np.random.choice(private_ids, size=1000, replace=False)
+
     private_df = test_df.loc[test_df["customer_ID"].isin(private_ids)]
     del test_df
     gc.collect()
 
     # preprocessing
-    train_df = preprocess(train_df)
-    public_df = preprocess(public_df)
     private_df = preprocess(private_df)
-    train_labels["customer_ID"] = pd.Categorical(train_labels["customer_ID"], ordered=True)
 
     # aggregation
-    print("#" * 10, "train", "#" * 10)
-    train_df, num_features, cat_features = aggregate_features(train_df)
-    gc.collect()
-
-    print("#" * 10, "public", "#" * 10)
-    public_df, _, _ = aggregate_features(public_df)
-    gc.collect()
-
     print("#" * 10, "private", "#" * 10)
-    private_df, _, _ = aggregate_features(private_df)
-    gc.collect()
+    _, _ = aggregate_features(private_df, filename="private.pkl")
 
-    print("#" * 30)
+    ### make features
+    num_features, cat_features = make_features(
+        filenames=[
+            "train.pkl",
+            "public.pkl",
+            "private.pkl",
+        ],
+        output_filename="additive_features.pkl",
+        num_features=num_features,
+        cat_features=cat_features,
+    )
 
-    # concat
-    df = pd.concat([train_df, public_df, private_df])
-    del train_df, public_df, private_df
-    gc.collect()
+    ### process_input
+    num_features, cat_features = process_input(
+        filenames=[
+            "train.pkl",
+            "public.pkl",
+            "private.pkl",
+        ],
+        additive_features_filename="additive_features.pkl",
+        num_features=num_features,
+        cat_features=cat_features,
+    )
 
-    # make features
-    df, num_features, cat_features = make_features(df, num_features, cat_features)
-
-    # fill nan values
-    df, num_features, cat_features = fill_nan_values(df, num_features, cat_features)
-
-    print(f"df.shape={df.shape}")
+    ### labels
+    train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
+    train_labels["customer_ID"] = pd.Categorical(train_labels["customer_ID"], ordered=True)
+    train_labels.set_index("customer_ID", inplace=True)
+    if debug:
+        train_labels = train_labels.loc[train_ids]
+    train_labels.sort_index(inplace=True)
 
     # save results
-    df.to_pickle("data.pkl")
     train_labels.to_pickle("train_labels.pkl")
     np.save("train_ids.npy", train_ids, allow_pickle=True)
     np.save("public_ids.npy", public_ids, allow_pickle=True)
@@ -1007,15 +1101,10 @@ def train_fold(
 def training_main():
     train_ids = np.load("train_ids.npy", allow_pickle=True)
     train_labels = pd.read_pickle("train_labels.pkl")
-    df = pd.read_pickle("data.pkl")
     num_features = joblib.load("num_features.pkl")
     cat_features = joblib.load("cat_features.pkl")
 
-    train = df.loc[train_ids].sort_index()
-    train_labels.sort_values("customer_ID", inplace=True)
-
-    del df
-    gc.collect()
+    train = pd.read_pickle("train.pkl")
 
     oof_prediction = np.zeros(len(train))
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
@@ -1034,6 +1123,8 @@ def training_main():
 
         sample_weight_train = None
         sample_weight_valid = None
+
+        print(f"X_train.shape={X_train.shape}, X_valid.shape={X_valid.shape}")
 
         prediction = train_fold(
             fold,
@@ -1081,15 +1172,10 @@ def training_main():
 def inference_main():
     public_ids = np.load("public_ids.npy", allow_pickle=True)
     private_ids = np.load("private_ids.npy", allow_pickle=True)
-    df = pd.read_pickle("data.pkl")
+    public = pd.read_pickle("public.pkl")
+    private = pd.read_pickle("private.pkl")
     num_features = joblib.load("num_features.pkl")
     cat_features = joblib.load("cat_features.pkl")
-
-    public = df.loc[public_ids].sort_index()
-    private = df.loc[private_ids].sort_index()
-
-    del df
-    gc.collect()
 
     public_predictions = []
     private_predictions = []
