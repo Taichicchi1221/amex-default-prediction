@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp004"
-EXPERIMENT_DESC = "transformer(no scaling)"
+EXPERIMENT_NAME = "seq_exp008"
+EXPERIMENT_DESC = "transformer modified architecture"
 
 # ====================================================
 # util

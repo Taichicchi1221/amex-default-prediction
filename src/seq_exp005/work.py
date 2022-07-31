@@ -305,21 +305,20 @@ R_FEATURES = [
 PARAMS = {
     "model": {
         "type": "Transformer",
-        "label_smoothing": 0.10,
         "params": {
             "encoder_num_blocks": 8,
-            "encoder_dropout_list": [0.25] * 8,  # len == encoder_num_blocks
-            "encoder_d_model_list": [512] * 8,  # Transformer # len == encoder_num_blocks
+            "encoder_dropout_list": [0.10] * 8,  # len == encoder_num_blocks
+            "encoder_d_model_list": [64] * 8,  # Transformer # len == encoder_num_blocks
             "encoder_nhead_list": [8] * 8,  # Transformer # len == encoder_num_blocks
             # "encoder_hidden_size_list": [64, 64],  # LSTM, GRU, # len == encoder_num_blocks
             # "encoder_num_layers_list": [1, 1],  # LSTM, GRU, len == encoder_num_blocks
             # "encoder_bidirectional": False,  # LSTM, GRU
-            "classifier_hidden_size": 256,
-            "classifier_dropout": 0.25,
+            "classifier_hidden_size": 64,
+            "classifier_dropout": 0.10,
         },
     },
     "trainer": {
-        "max_epochs": 15,
+        "max_epochs": 32,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -372,7 +371,7 @@ PARAMS = {
         # },
         "cls": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
         "params": {
-            "T_0": 3,
+            "T_0": 1,
             "T_mult": 2,
             "verbose": False,
         },
@@ -613,7 +612,6 @@ class Model(pl.LightningModule):
             **PARAMS["model"]["params"],
         )
 
-        self.label_smoothing = PARAMS["model"]["label_smoothing"]
         self.criterion = get_loss(PARAMS["loss"]["cls"], PARAMS["loss"]["params"])
 
         self.optimizer = get_optimizer(
@@ -653,8 +651,7 @@ class Model(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         x, y = train_batch
         yhat = self(x)
-        y_smooth = y.float() * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
-        loss = self.criterion(yhat, y_smooth)
+        loss = self.criterion(yhat, y)
         self.log(
             name="train_loss",
             value=loss.item(),

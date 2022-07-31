@@ -64,136 +64,6 @@ CAT_FEATURES = [
     "D_66",
     "D_68",
 ]
-
-
-NA_FEATURES = [
-    "P_2",
-    "B_2",
-    "S_3",
-    "D_41",
-    "B_3",
-    "D_42",
-    "D_43",
-    "D_44",
-    "D_45",
-    "D_46",
-    "D_48",
-    "D_49",
-    "B_6",
-    "B_8",
-    "D_50",
-    "D_52",
-    "P_3",
-    "D_53",
-    "D_54",
-    "S_7",
-    "D_55",
-    "D_56",
-    "B_13",
-    "S_9",
-    "D_59",
-    "D_61",
-    "B_15",
-    "D_62",
-    "D_64",
-    "B_16",
-    "B_17",
-    "B_19",
-    "D_66",
-    "B_20",
-    "D_68",
-    "S_12",
-    "D_69",
-    "B_22",
-    "D_70",
-    "D_72",
-    "D_73",
-    "D_74",
-    "D_76",
-    "R_7",
-    "D_77",
-    "B_25",
-    "B_26",
-    "D_78",
-    "D_79",
-    "R_9",
-    "D_80",
-    "B_27",
-    "D_81",
-    "D_82",
-    "S_17",
-    "R_12",
-    "D_83",
-    "R_14",
-    "D_84",
-    "B_29",
-    "B_30",
-    "D_86",
-    "D_87",
-    "D_88",
-    "R_20",
-    "B_33",
-    "D_89",
-    "D_91",
-    "S_22",
-    "S_23",
-    "S_24",
-    "S_25",
-    "S_26",
-    "D_102",
-    "D_103",
-    "D_104",
-    "D_105",
-    "D_106",
-    "D_107",
-    "B_37",
-    "R_26",
-    "R_27",
-    "B_38",
-    "D_108",
-    "D_109",
-    "D_110",
-    "D_111",
-    "B_39",
-    "D_112",
-    "B_40",
-    "S_27",
-    "D_113",
-    "D_114",
-    "D_115",
-    "D_116",
-    "D_117",
-    "D_118",
-    "D_119",
-    "D_120",
-    "D_121",
-    "D_122",
-    "D_123",
-    "D_124",
-    "D_125",
-    "D_126",
-    "D_128",
-    "D_129",
-    "B_41",
-    "B_42",
-    "D_130",
-    "D_131",
-    "D_132",
-    "D_133",
-    "D_134",
-    "D_135",
-    "D_136",
-    "D_137",
-    "D_138",
-    "D_139",
-    "D_140",
-    "D_141",
-    "D_142",
-    "D_143",
-    "D_144",
-    "D_145",
-]
-
 # ====================================================
 # data processing
 # ====================================================
@@ -277,13 +147,9 @@ def make_features(df: pd.DataFrame):
     with trace.timer("process num features"):
         values = []
         for col in num_features.copy():
-            if col not in NA_FEATURES:
-                continue
-
             name = f"{col}_isna"
-            value = df[col].isna().astype(np.int16).rename(name)
+            values.append(df[col].isna().astype(np.int16).rename(name))
             cat_features.append(name)
-            values.append(value)
         df = pd.concat([df] + values, axis=1)
         del values
         gc.collect()
@@ -330,11 +196,8 @@ def scale_features(df, num_features, cat_features, type="train"):
 def prepare_data(TYPE):
     def reshape_pad(x: pd.DataFrame):
         l, c = x.shape
-        return np.pad(
-            x.fillna(0).astype(np.float32).to_numpy(),
-            ((13 - l, 0), (0, 0)),
-            constant_values=0,
-        )
+        x.interpolate(method="linear", limit_direction="both", axis=0, inplace=True)
+        return np.pad(x.fillna(0).astype(np.float32).to_numpy(), ((13 - l, 0), (0, 0)), constant_values=0)
 
     # train
     if TYPE == "train":
