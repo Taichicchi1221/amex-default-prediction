@@ -34,8 +34,8 @@ MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp008"
-EXPERIMENT_DESC = "transformer"
+EXPERIMENT_NAME = "seq_exp010"
+EXPERIMENT_DESC = "transformer label smoothing(0.10)"
 
 # ====================================================
 # util

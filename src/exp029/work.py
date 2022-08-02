@@ -79,7 +79,7 @@ tqdm.pandas()
 # ====================================================
 # config
 # ====================================================
-DEBUG = True
+DEBUG = False
 
 SEED = 42
 N_SPLITS = 5
@@ -358,19 +358,11 @@ PARAMS = {
 # ====================================================
 # plots
 # ====================================================
-def plot_target_distribution(ypred, ytrue, path):
+def plot_distribution(ypred, ytrue, path):
     plt.figure()
     plt.hist(ytrue, alpha=0.5, bins=50)
     plt.hist(sigmoid(ypred), alpha=0.5, bins=50)
     plt.legend(["ytrue", "ypred"])
-    plt.savefig(path)
-    plt.close()
-
-
-def plot_distribution(ypred, path):
-    plt.figure()
-    plt.hist(ypred, bins=50)
-    plt.legend(["ypred"])
     plt.savefig(path)
     plt.close()
 
@@ -748,7 +740,6 @@ def aggregate_features(df, filename):
     with trace.timer("aggregate num features"):
         num_columns = [c for c in df.columns if c not in CAT_FEATURES + ["customer_ID", "S_2"]]
         agg_names = [
-            "count",
             "mean",
             "max",
             "min",
@@ -766,13 +757,6 @@ def aggregate_features(df, filename):
                 num_agg_result[col]
             ):
                 num_agg_result[col] = num_agg_result[col].round(2)
-
-        # na_index
-        na_index_mean = df.set_index("customer_ID")[num_columns].groupby(level=0)[num_columns].mean()
-        na_index_mean.columns = [f"{col}-na_index_mean" for col in num_columns]
-        results.append(na_index_mean.sort_index())
-        del na_index_mean
-        gc.collect()
 
         # last - shift1
         last_diff = df.groupby("customer_ID")[num_columns].nth(-1) - df.groupby("customer_ID")[num_columns].nth(-2)
@@ -865,7 +849,7 @@ def aggregate_features(df, filename):
 def make_features(filenames, output_filename, num_features, cat_features):
     trace = Trace()
 
-    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last")]
+    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last") or col.endswith("-max") or col.endswith("-min")]
     USE_CAT_COLS = [col for col in cat_features if col.endswith("-last")]
 
     USE_COLS = USE_NUM_COLS + USE_CAT_COLS
@@ -926,31 +910,31 @@ def make_features(filenames, output_filename, num_features, cat_features):
         num_features.extend(pca_features.columns)
 
     ### KNN
-    with trace.timer("knn"):
-        N_NEIGHBORS = 10
-        METRIC = "euclidean"
-        knn = cuml.NearestNeighbors(
-            n_neighbors=N_NEIGHBORS,
-            metric=METRIC,
-            verbose=True,
-            output_type="numpy",
-        )
-        knn.fit(features[USE_COLS])
-        neighbors = knn.kneighbors(features[USE_COLS], return_distance=False).astype(np.uint16)
-        names = []
-        arrays = []
-        for col in tqdm(USE_COLS, desc="nearest neighbors"):
-            names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
-            arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
+    # with trace.timer("knn"):
+    #     N_NEIGHBORS = 15
+    #     METRIC = "euclidean"
+    #     knn = cuml.NearestNeighbors(
+    #         n_neighbors=N_NEIGHBORS,
+    #         metric=METRIC,
+    #         verbose=True,
+    #         output_type="numpy",
+    #     )
+    #     knn.fit(features[USE_COLS])
+    #     neighbors = knn.kneighbors(features[USE_COLS], return_distance=False).astype(np.uint16)
+    #     names = []
+    #     arrays = []
+    #     for col in tqdm(USE_COLS, desc="nearest neighbors"):
+    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
+    #         arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
 
-        feature_list.append(
-            pd.DataFrame(
-                np.stack(arrays, axis=1),
-                columns=names,
-                index=features.index.to_numpy(),
-            )
-        )
-        num_features.extend(names)
+    #     feature_list.append(
+    #         pd.DataFrame(
+    #             np.stack(arrays, axis=1),
+    #             columns=names,
+    #             index=features.index.to_numpy(),
+    #         )
+    #     )
+    #     num_features.extend(names)
 
     del features
     gc.collect()
@@ -968,14 +952,11 @@ def make_features(filenames, output_filename, num_features, cat_features):
 
 def process_input(filenames, additive_features_filename, num_features, cat_features):
     trace = Trace()
+    additive_features = pd.read_pickle(additive_features_filename)
     for filename in filenames:
         print("#" * 10, filename, "#" * 10)
         df = pd.read_pickle(filename)
-
-        # additive features
-        if os.path.exists(additive_features_filename):
-            additive_features = pd.read_pickle(additive_features_filename)
-            df = pd.concat([df, additive_features], axis=1, join="inner")
+        df = pd.concat([df, additive_features], axis=1, join="inner")
 
         # process nan values
         with trace.timer("process nan values"):
@@ -1197,8 +1178,7 @@ def training_main():
 
     oof_df.to_csv("oof.csv", index=False)
 
-    plot_target_distribution(oof_df["prediction"], train_labels["target"], path="oof_target_distribution.png")
-    plot_distribution(oof_df["prediction"], path="oof_distribution.png")
+    plot_distribution(oof_df["prediction"], train_labels["target"], path="oof_distribution.png")
 
     return oof_score, g, d
 
@@ -1235,8 +1215,6 @@ def inference_main():
             "prediction": private_prediction,
         }
     )
-    plot_distribution(public_df["prediction"], path="public_distribution.png")
-    plot_distribution(private_df["prediction"], path="private_distribution.png")
     test_df = pd.concat([public_df, private_df], axis=0).reset_index(drop=True)
     test_df.to_csv("submission.csv", index=False)
 

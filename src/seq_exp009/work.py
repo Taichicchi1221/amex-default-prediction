@@ -305,7 +305,7 @@ R_FEATURES = [
 PARAMS = {
     "model": {
         "type": "Transformer",
-        "label_smoothing": 0.10,
+        "label_smoothing": 0.00,
         "params": {
             "encoder_num_blocks": 4,
             "encoder_dropout_list": [0.25] * 4,  # len == encoder_num_blocks

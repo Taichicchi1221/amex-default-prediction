@@ -79,7 +79,7 @@ tqdm.pandas()
 # ====================================================
 # config
 # ====================================================
-DEBUG = True
+DEBUG = False
 
 SEED = 42
 N_SPLITS = 5
@@ -358,19 +358,11 @@ PARAMS = {
 # ====================================================
 # plots
 # ====================================================
-def plot_target_distribution(ypred, ytrue, path):
+def plot_distribution(ypred, ytrue, path):
     plt.figure()
     plt.hist(ytrue, alpha=0.5, bins=50)
     plt.hist(sigmoid(ypred), alpha=0.5, bins=50)
     plt.legend(["ytrue", "ypred"])
-    plt.savefig(path)
-    plt.close()
-
-
-def plot_distribution(ypred, path):
-    plt.figure()
-    plt.hist(ypred, bins=50)
-    plt.legend(["ypred"])
     plt.savefig(path)
     plt.close()
 
@@ -1197,8 +1189,7 @@ def training_main():
 
     oof_df.to_csv("oof.csv", index=False)
 
-    plot_target_distribution(oof_df["prediction"], train_labels["target"], path="oof_target_distribution.png")
-    plot_distribution(oof_df["prediction"], path="oof_distribution.png")
+    plot_distribution(oof_df["prediction"], train_labels["target"], path="oof_distribution.png")
 
     return oof_score, g, d
 
@@ -1235,8 +1226,6 @@ def inference_main():
             "prediction": private_prediction,
         }
     )
-    plot_distribution(public_df["prediction"], path="public_distribution.png")
-    plot_distribution(private_df["prediction"], path="private_distribution.png")
     test_df = pd.concat([public_df, private_df], axis=0).reset_index(drop=True)
     test_df.to_csv("submission.csv", index=False)
 
