@@ -305,7 +305,7 @@ R_FEATURES = [
 PARAMS = {
     "model": {
         "type": "Transformer",
-        "label_smoothing": 0.15,
+        "label_smoothing": 0.10,
         "params": {
             "encoder_num_blocks": 4,
             "encoder_dropout_list": [0.25] * 4,  # len == encoder_num_blocks
@@ -992,11 +992,10 @@ def inference(customer_ids, X, model_path):
 
     predictions_list = []
 
-    with torch.no_grad():
-        for x, _ in tqdm(dl, desc="inference", total=len(dl)):
-            x = x.to(device)
-            logits = model(x)
-            predictions_list.append(logits.detach().cpu().numpy())
+    for x, _ in tqdm(dl, desc="inference", total=len(dl)):
+        x = x.to(device)
+        logits = model(x)
+        predictions_list.append(logits.detach().cpu().numpy())
 
     prediction = np.concatenate(predictions_list, axis=0)
 
