@@ -80,7 +80,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 15
+N_SPLITS = 5
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"

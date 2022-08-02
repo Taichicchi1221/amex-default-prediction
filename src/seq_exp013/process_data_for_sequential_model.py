@@ -35,7 +35,6 @@ import pandas as pd
 import cupy
 import cudf
 import cuml
-from sequential_model_work import R_FEATURES
 
 # utils
 from utils import *
@@ -227,7 +226,7 @@ def preprocess(df: pd.DataFrame):
     ]
     df.drop(columns=dropcols, inplace=True)
 
-    return df[[col for col in R_FEATURES]]
+    return df
 
 
 def make_features(df: pd.DataFrame):
