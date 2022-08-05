@@ -17,6 +17,18 @@ MLFLOW_DIR = "../mlruns"
 WORKFILE_NAME = "customer_aggregation_work.py"
 DEPENDENT_FILES = ["utils.py"]
 MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+WORKFILE_TO_CLEAR = [
+    "train.pkl",
+    "train_labels.pkl",
+    "public.pkl",
+    "private.pkl",
+    "additive_features.pkl",
+    "num_features.pkl",
+    "cat_features.pkl",
+    "train_ids.npy",
+    "public_ids.npy",
+    "private_ids.npy",
+]
 ########################## customer aggregation ##########################
 
 
@@ -24,6 +36,17 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 # WORKFILE_NAME = "sequential_model_work.py"
 # DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
 # MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+# WORKFILE_TO_CLEAR = [
+#     "train.npy",
+#     "train_labels.npy",
+#     "public.npy",
+#     "private.npy",
+#     "num_features.pkl",
+#     "cat_features.pkl",
+#     "train_ids.npy",
+#     "public_ids.npy",
+#     "private_ids.npy",
+# ]
 ########################## sequential model ##########################
 
 
@@ -31,11 +54,23 @@ MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 # WORKFILE_NAME = "customer_aggregation_adversarial_validation_work.py"
 # DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
 # MLFLOW_EXPERIMENT = "ADVERSARIAL_VALIDATION"
+# WORKFILE_TO_CLEAR = [
+#     "train.pkl",
+#     "train_labels.pkl",
+#     "public.pkl",
+#     "private.pkl",
+#     "additive_features.pkl",
+#     "num_features.pkl",
+#     "cat_features.pkl",
+#     "train_ids.npy",
+#     "public_ids.npy",
+#     "private_ids.npy",
+# ]
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "exp031"
-EXPERIMENT_DESC = "lgbmdart fold10"
+EXPERIMENT_NAME = "exp034"
+EXPERIMENT_DESC = "lgbmdart + diff_sum"
 
 # ====================================================
 # util
@@ -145,6 +180,12 @@ def save_results_main():
     return results
 
 
+def remove_work_files(paths):
+    for path in paths:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 if __name__ == "__main__":
 
     # prepare
@@ -155,6 +196,8 @@ if __name__ == "__main__":
     print("=" * 25, "PROCESS", "=" * 25)
     subprocess.run("python -u work.py", shell=True)
     print("=" * 25, "PROCESS", "=" * 25)
+
+    remove_work_files(WORKFILE_TO_CLEAR)
 
     # save results
     save_results_main()

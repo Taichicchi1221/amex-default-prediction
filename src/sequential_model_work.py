@@ -80,7 +80,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 15
+N_SPLITS = 10
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -305,21 +305,21 @@ R_FEATURES = [
 PARAMS = {
     "model": {
         "type": "Transformer",
-        "label_smoothing": 0.10,
+        "label_smoothing": 0.00,
         "params": {
-            "encoder_num_blocks": 4,
-            "encoder_dropout_list": [0.25] * 4,  # len == encoder_num_blocks
-            "encoder_d_model_list": [512] * 4,  # Transformer # len == encoder_num_blocks
-            "encoder_nhead_list": [8] * 4,  # Transformer # len == encoder_num_blocks
+            "encoder_num_blocks": 8,
+            "encoder_dropout_list": [0.25] * 8,  # len == encoder_num_blocks
+            "encoder_d_model_list": [256] * 8,  # Transformer # len == encoder_num_blocks
+            "encoder_nhead_list": [8] * 8,  # Transformer # len == encoder_num_blocks
             # "encoder_hidden_size_list": [512] * 4,  # LSTM, GRU, # len == encoder_num_blocks
             # "encoder_num_layers_list": [1] * 4,  # LSTM, GRU, len == encoder_num_blocks
             # "encoder_bidirectional": False,  # LSTM, GRU
-            "classifier_hidden_size": 256,
+            "classifier_hidden_size": 128,
             "classifier_dropout": 0.25,
         },
     },
     "trainer": {
-        "max_epochs": 25,
+        "max_epochs": 15,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -328,26 +328,26 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {
         "train": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": True,
             "drop_last": True,
             "pin_memory": True,
             "num_workers": 2,
         },
         "valid": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
             "num_workers": 0,
         },
         "test": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
@@ -372,7 +372,7 @@ PARAMS = {
         # },
         "cls": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
         "params": {
-            "T_0": 3,
+            "T_0": 1,
             "T_mult": 2,
             "verbose": False,
         },
@@ -1020,8 +1020,8 @@ def training_main():
     for fold, (train_idx, valid_idx) in enumerate(skf.split(train_ids, train_labels)):
         train_customer_ids = train_ids[train_idx]
         valid_customer_ids = train_ids[valid_idx]
-        X_train = train[train_idx]
-        X_valid = train[valid_idx]
+        X_train = train.view()[train_idx]
+        X_valid = train.view()[valid_idx]
         y_train = train_labels[train_idx]
         y_valid = train_labels[valid_idx]
 

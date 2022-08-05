@@ -71,8 +71,6 @@ import lightgbm as lgb
 import xgboost as xgb
 import catboost as cb
 
-import category_encoders as ce
-
 # utils
 from utils import *
 
@@ -84,7 +82,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 5
+N_SPLITS = 10
 
 
 INPUT_DIR = "../input/amex-default-prediction"
@@ -309,9 +307,8 @@ R_FEATURES = [
 PARAMS = {
     "type": "LightGBM",
     "metric_name": "amex",  # {amex, binary_logloss}
-    "num_boost_round": 10000,
-    "early_stopping_rounds": 10000,
-    "target_encoding": False,
+    "num_boost_round": 100000,
+    "early_stopping_rounds": 1500,
     "seed": SEED,
     "n_splits": N_SPLITS,
     "params": {
@@ -323,7 +320,7 @@ PARAMS = {
         "min_data_in_leaf": 40,
         "reg_alpha": 1.0,
         "reg_lambda": 2.0,
-        "feature_fraction": 0.25,
+        "feature_fraction": 0.20,
         "bagging_freq": 10,
         "bagging_fraction": 0.50,
         "seed": SEED,
@@ -340,7 +337,6 @@ PARAMS = {
 #     "metric_name": "amex",  # {amex, logloss}
 #     "num_boost_round": 100000,
 #     "early_stopping_rounds": 1500,
-#     "target_encoding": False,
 #     "seed": SEED,
 #     "n_splits": N_SPLITS,
 #     "params": {
@@ -439,6 +435,8 @@ class BaseModelWrapper(metaclass=ABCMeta):
 
 
 class XGBoostModel(BaseModelWrapper):
+    METRIC_NAME = "logloss"  # {amex, logloss}
+
     def __init__(self, params) -> None:
         super().__init__()
         self.params = params
@@ -456,20 +454,6 @@ class XGBoostModel(BaseModelWrapper):
     ):
         self.feature_names = list(X_train.columns)
         self.feature_types = [("c" if f in cat_features else "q") for f in self.feature_names]
-
-        ## target encoding
-        if self.params["target_encoding"]:
-            self.target_encoder = ce.TargetEncoder(
-                cols=cat_features,
-                min_samples_leaf=1,
-                smoothing=1.0,
-            )
-            self.target_encoder.fit(X_train, y_train)
-            X_train = self.target_encoder.transform(X_train)
-            X_valid = self.target_encoder.transform(X_valid)
-            self.feature_types = ["q" for f in self.feature_names]
-
-        ## make dataset
         train_set = xgb.DMatrix(
             data=X_train.to_numpy(),
             label=y_train.to_numpy(),
@@ -487,7 +471,6 @@ class XGBoostModel(BaseModelWrapper):
             enable_categorical=True,
         )
 
-        ## train
         self.evals_result = {}
 
         callbacks = [
@@ -511,8 +494,6 @@ class XGBoostModel(BaseModelWrapper):
         )
 
     def inference(self, X):
-        if self.params["target_encoding"]:
-            X = self.target_encoder.transform(X)
         d = xgb.DMatrix(
             data=X.to_numpy(),
             feature_names=self.model.feature_names,
@@ -522,13 +503,9 @@ class XGBoostModel(BaseModelWrapper):
         return self.model.predict(d)
 
     def save(self, path):
-        if self.params["target_encoding"]:
-            joblib.dump(self.target_encoder, os.path.splitext(path)[0] + "_encoder" + os.path.splitext(path)[1])
         joblib.dump(self.model, path)
 
     def load(self, path):
-        if self.params["target_encoding"]:
-            self.target_encoder = joblib.load(os.path.splitext(path)[0] + "_encoder" + os.path.splitext(path)[1])
         self.model = joblib.load(path)
 
     @staticmethod
@@ -568,6 +545,8 @@ class XGBoostModel(BaseModelWrapper):
 
 
 class LightGBMModel(BaseModelWrapper):
+    METRIC_NAME = "amex"  # {amex, binary_logloss}
+
     def __init__(self, params) -> None:
         super().__init__()
         self.params = params
@@ -583,19 +562,6 @@ class LightGBMModel(BaseModelWrapper):
         num_features,
         cat_features,
     ):
-
-        ## target encoding
-        if self.params["target_encoding"]:
-            self.target_encoder = ce.TargetEncoder(
-                cols=cat_features,
-                min_samples_leaf=1,
-                smoothing=1.0,
-            )
-            self.target_encoder.fit(X_train, y_train)
-            X_train = self.target_encoder.transform(X_train)
-            X_valid = self.target_encoder.transform(X_valid)
-            cat_features = "auto"
-
         train_set = lgb.Dataset(X_train, y_train, weight=sample_weight_train, feature_name=list(X_train.columns))
         valid_set = lgb.Dataset(X_valid, y_valid, weight=sample_weight_valid, feature_name=list(X_valid.columns))
 
@@ -627,18 +593,12 @@ class LightGBMModel(BaseModelWrapper):
             self.model = early_stopping_callback.best_model
 
     def inference(self, X):
-        if self.params["target_encoding"]:
-            X = self.target_encoder.transform(X)
         return self.model.predict(X, raw_score=True)
 
     def save(self, path):
-        if self.params["target_encoding"]:
-            joblib.dump(self.target_encoder, os.path.splitext(path)[0] + "_encoder" + os.path.splitext(path)[1])
         joblib.dump(self.model, path)
 
     def load(self, path):
-        if self.params["target_encoding"]:
-            self.target_encoder = joblib.load(os.path.splitext(path)[0] + "_encoder" + os.path.splitext(path)[1])
         self.model = joblib.load(path)
 
     @staticmethod
@@ -753,13 +713,17 @@ def preprocess(df: pd.DataFrame):
         "R_1",
         "B_29",
         "S_9",
+        "D_121",
+        "D_59",
+        "S_11",
+        "D_115",
     ]
     df.drop(columns=dropcols, inplace=True)
 
     return df
 
 
-def aggregate_features(df):
+def aggregate_features(df, filename):
     trace = Trace()
 
     results = []
@@ -799,55 +763,20 @@ def aggregate_features(df):
         results.append(num_agg_result.sort_index())
 
         # transform last num features to round2
-        round_cols = [col for col in num_agg_result.columns if col.endswith("-last") and pd.api.types.is_float_dtype(num_agg_result[col])]
-        rounds = num_agg_result[round_cols].round(2).add_suffix("-round2")
-        results.append(rounds.sort_index())
+        for col in num_agg_result.columns:
+            if (col.endswith("-last") or col.endswith("-max") or col.endswith("-min")) and pd.api.types.is_float_dtype(num_agg_result[col]):
+                num_agg_result[col] = num_agg_result[col].round(2)
 
         # na_index
-        na_index_mean = df.set_index("customer_ID").isna()[num_columns].groupby(level=0)[num_columns].mean().add_suffix("-na_index_mean")
+        na_index_mean = df.set_index("customer_ID").isna()[num_columns].groupby(level=0)[num_columns].mean()
+        na_index_mean.columns = [f"{col}-na_index_mean" for col in num_columns]
         results.append(na_index_mean.sort_index())
         del na_index_mean
         gc.collect()
 
-        # diff_sum
-        last_diff1 = (df.groupby("customer_ID")[num_columns].nth(-1).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-2).fillna(0)).abs()
-        last_diff2 = (df.groupby("customer_ID")[num_columns].nth(-2).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-3).fillna(0)).abs()
-        last_diff3 = (df.groupby("customer_ID")[num_columns].nth(-3).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-4).fillna(0)).abs()
-        last_diff4 = (df.groupby("customer_ID")[num_columns].nth(-4).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-5).fillna(0)).abs()
-        last_diff5 = (df.groupby("customer_ID")[num_columns].nth(-5).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-6).fillna(0)).abs()
-        last_diff6 = (df.groupby("customer_ID")[num_columns].nth(-6).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-7).fillna(0)).abs()
-        last_diff7 = (df.groupby("customer_ID")[num_columns].nth(-7).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-8).fillna(0)).abs()
-        last_diff_sum3 = (last_diff1 + last_diff2 + last_diff3).add_suffix("-last_diff_sum3")
-        last_diff_sum5 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5).add_suffix("-last_diff_sum5")
-        last_diff_sum7 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5 + last_diff6 + last_diff7).add_suffix("-last_diff_sum7")
-        results.append(last_diff_sum3.sort_index())
-        results.append(last_diff_sum5.sort_index())
-        results.append(last_diff_sum7.sort_index())
-        del last_diff1, last_diff2, last_diff3, last_diff4, last_diff5
-        del last_diff_sum3, last_diff_sum5, last_diff_sum7
-        gc.collect()
-
-        # last - mean
-        last_mean_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("mean")).add_suffix(
-            "-last_mean_diff"
-        )
-        results.append(last_mean_diff.sort_index())
-        del last_mean_diff
-        gc.collect()
-
-        # last / mean
-        # last_mean_frac = (
-        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("mean"))
-        #     .add_suffix("-last_mean_frac")
-        #     .replace([-np.inf, np.inf], pd.NA)
-        #     .astype(pd.Float32Dtype())
-        # )
-        # results.append(last_mean_frac.sort_index())
-        # del last_mean_frac
-        # gc.collect()
-
         # last - shift1
-        last_diff = (df.groupby("customer_ID")[num_columns].nth(-1) - df.groupby("customer_ID")[num_columns].nth(-2)).add_suffix("-last_diff")
+        last_diff = df.groupby("customer_ID")[num_columns].nth(-1) - df.groupby("customer_ID")[num_columns].nth(-2)
+        last_diff.columns = [f"{col}-last_diff" for col in num_columns]
         results.append(last_diff.sort_index())
         del last_diff
         gc.collect()
@@ -855,18 +784,35 @@ def aggregate_features(df):
         # last / shift1
         # last_frac = (
         #     (df.groupby("customer_ID")[num_columns].nth(-1) / df.groupby("customer_ID")[num_columns].nth(-2))
-        #     .add_suffix("-last_frac")
         #     .replace([-np.inf, np.inf], pd.NA)
         #     .astype(pd.Float32Dtype())
         # )
+        # last_frac.columns = [f"{col}-last_frac" for col in num_columns]
         # results.append(last_frac.sort_index())
         # del last_frac
         # gc.collect()
 
+        # last - mean
+        last_mean_diff = df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("mean")
+        last_mean_diff.columns = [f"{col}-last_mean_diff" for col in num_columns]
+        results.append(last_mean_diff.sort_index())
+        del last_mean_diff
+        gc.collect()
+
+        # last / mean
+        # last_mean_frac = (
+        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("mean"))
+        #     .replace([-np.inf, np.inf], pd.NA)
+        #     .astype(pd.Float32Dtype())
+        # )
+        # last_mean_frac.columns = [f"{col}-last_mean_frac" for col in num_columns]
+        # results.append(last_mean_frac.sort_index())
+        # del last_mean_frac
+        # gc.collect()
+
         # last - first
-        last_first_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("first")).add_suffix(
-            "-last_first_diff"
-        )
+        last_first_diff = df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("first")
+        last_first_diff.columns = [f"{col}-last_first_diff" for col in num_columns]
         results.append(last_first_diff.sort_index())
         del last_first_diff
         gc.collect()
@@ -880,16 +826,6 @@ def aggregate_features(df):
         # last_first_frac.columns = [f"{col}-last_first_frac" for col in num_columns]
         # results.append(last_first_frac.sort_index())
         # del last_first_frac
-        # gc.collect()
-
-        # # left_std, right_std
-        # left_std = df.groupby("customer_ID")[num_columns].agg("mean") - df.groupby("customer_ID")[num_columns].agg("std")
-        # right_std = df.groupby("customer_ID")[num_columns].agg("mean") + df.groupby("customer_ID")[num_columns].agg("std")
-        # left_std.columns = [f"{col}-left_std" for col in num_columns]
-        # right_std.columns = [f"{col}-right_std" for col in num_columns]
-        # results.append(left_std.sort_index())
-        # results.append(right_std.sort_index())
-        # del left_std, right_std
         # gc.collect()
 
     # cat
@@ -917,16 +853,25 @@ def aggregate_features(df):
         cat_features = [f"{col}-last" for col in cat_columns]
         num_features = [col for col in agg_result.columns if col not in cat_features]
 
-    return agg_result, num_features, cat_features
+    with trace.timer("save result"):
+        # save results
+        agg_result.to_pickle(filename)
+        del agg_result
+        gc.collect()
+
+    return num_features, cat_features
 
 
-def make_features(df, TYPE, num_features, cat_features):
+def make_features(filenames, output_filename, num_features, cat_features):
     trace = Trace()
 
-    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last") or col.endswith("-max") or col.endswith("-min")]
+    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last")]
     USE_CAT_COLS = [col for col in cat_features if col.endswith("-last")]
 
     USE_COLS = USE_NUM_COLS + USE_CAT_COLS
+
+    with trace.timer("make all df"):
+        df = pd.concat([pd.read_pickle(filename)[USE_COLS] for filename in filenames], axis=0)
 
     feature_list = []
 
@@ -942,16 +887,7 @@ def make_features(df, TYPE, num_features, cat_features):
         USE_COLS = USE_NUM_COLS + USE_CAT_COLS
 
         # num
-        if TYPE == "train":
-            scaler = StandardScaler(copy=True)
-            scaler.fit(df[USE_NUM_COLS].astype(np.float32))
-            joblib.dump(scaler, "scaler.pkl")
-        elif TYPE in ("public", "private"):
-            scaler = joblib.load("scaler.pkl")
-        else:
-            raise ValueError
-
-        num = scaler.transform(df[USE_NUM_COLS].astype(np.float32))
+        num = StandardScaler(copy=False).fit_transform(df[USE_NUM_COLS].astype(np.float32))
 
         features = pd.concat(
             [
@@ -962,85 +898,98 @@ def make_features(df, TYPE, num_features, cat_features):
         )
         features.fillna(0, inplace=True)
         features = cudf.from_pandas(features)
-        del cat, num
+        del df, cat, num
         gc.collect()
 
     ### kmeans
     with trace.timer("kmeans"):
-        N_CLUSTERS = 5
-        cluster_name = f"kmeans_{N_CLUSTERS}"
-        distance_names = [f"kmeans_dist_{n}" for n in range(N_CLUSTERS)]
-
-        if TYPE == "train":
-            kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
-            kmeans.fit(features)
-            cat_features.append(cluster_name)
-            num_features.extend(distance_names)
-            joblib.dump(kmeans, "kmeans.pkl")
-        elif TYPE in ("public", "private"):
-            kmeans = joblib.load("kmeans.pkl")
-        else:
-            raise ValueError
-
+        N_CLUSTERS = 30
+        kmeans = cuml.KMeans(n_clusters=N_CLUSTERS, random_state=SEED)
         kmeans_feature = pd.Series(
-            kmeans.predict(features).astype(cupy.uint8).to_numpy(),
-            name=cluster_name,
-            index=features.index.to_numpy(),
-        )
-        kmeans_dist_feature = pd.DataFrame(
-            kmeans.transform(features).astype(cupy.float32).to_numpy(),
-            columns=distance_names,
+            kmeans.fit_predict(features).astype(cupy.uint8).to_numpy(),
+            name=f"kmeans_{N_CLUSTERS}",
             index=features.index.to_numpy(),
         )
         feature_list.append(kmeans_feature)
-        feature_list.append(kmeans_dist_feature)
+        cat_features.append(f"kmeans_{N_CLUSTERS}")
 
     ### PCA
     with trace.timer("pca"):
-        N_COMPONENTS = 15
-        names = [f"pca_{i}" for i in range(N_COMPONENTS)]
-        if TYPE == "train":
-            pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
-            pca.fit(features)
-            num_features.extend(names)
-            joblib.dump(pca, "pca.pkl")
-        elif TYPE in ("public", "private"):
-            pca = joblib.load("pca.pkl")
-        else:
-            raise ValueError
-
+        N_COMPONENTS = 50
+        pca = cuml.PCA(n_components=N_COMPONENTS, random_state=SEED)
         pca_features = pd.DataFrame(
-            pca.transform(features).astype(cupy.float32).to_numpy(),
-            columns=names,
+            pca.fit_transform(features).astype(cupy.float32).to_numpy(),
+            columns=[f"pca_{i}" for i in range(N_COMPONENTS)],
             index=features.index.to_numpy(),
         )
         feature_list.append(pca_features)
+        num_features.extend(pca_features.columns)
+
+    ### KNN
+    # with trace.timer("knn"):
+    #     N_NEIGHBORS = 10
+    #     METRIC = "euclidean"
+    #     knn = cuml.NearestNeighbors(
+    #         n_neighbors=N_NEIGHBORS,
+    #         metric=METRIC,
+    #         verbose=True,
+    #         output_type="numpy",
+    #     )
+    #     knn.fit(features[USE_COLS])
+    #     neighbors = knn.kneighbors(features[USE_COLS], return_distance=False).astype(np.uint16)
+    #     names = []
+    #     arrays = []
+    #     for col in tqdm(USE_COLS, desc="nearest neighbors"):
+    #         names.append(f"{col}-nn{N_NEIGHBORS}_{METRIC}_mean")
+    #         arrays.append(np.nanmean(features[col].to_numpy()[neighbors], axis=1).astype(np.float32))
+
+    #     feature_list.append(
+    #         pd.DataFrame(
+    #             np.stack(arrays, axis=1),
+    #             columns=names,
+    #             index=features.index.to_numpy(),
+    #         )
+    #     )
+    #     num_features.extend(names)
 
     del features
     gc.collect()
 
     with trace.timer("concat results"):
-        df = pd.concat([df] + feature_list, axis=1)
+        additive_features = pd.concat(feature_list, axis=1)
 
-    return df, num_features, cat_features
+    with trace.timer("save result"):
+        additive_features.to_pickle(output_filename)
+        del additive_features
+        gc.collect()
+
+    return num_features, cat_features
 
 
-def process_input(df, filename, num_features, cat_features):
+def process_input(filenames, additive_features_filename, num_features, cat_features):
     trace = Trace()
+    for filename in filenames:
+        print("#" * 10, filename, "#" * 10)
+        df = pd.read_pickle(filename)
 
-    # process nan values
-    with trace.timer("process nan values"):
-        # cat features
-        for col in cat_features:
-            m = df[col].max()
-            df[col] = df[col].fillna(m + 1).astype(np.int16)
+        # additive features
+        if os.path.exists(additive_features_filename):
+            additive_features = pd.read_pickle(additive_features_filename)
+            df = pd.concat([df, additive_features], axis=1, join="inner")
 
-        # num features
-        df.fillna(-9999, inplace=True)
-        df[num_features] = df[num_features].astype(np.float32)
+        # process nan values
+        with trace.timer("process nan values"):
+            # cat features
+            for col in cat_features:
+                m = df[col].max()
+                df[col] = df[col].fillna(m + 1).astype(np.int16)
 
-    df.sort_index().to_pickle(filename)
-    print(f"{filename}: df.shape={df.shape}")
+            # num features
+            df.fillna(-9999, inplace=True)
+            df[num_features] = df[num_features].astype(np.float32)
+
+        df.sort_index().to_pickle(filename)
+        print(f"{filename}: df.shape={df.shape}")
 
     return num_features, cat_features
 
@@ -1048,57 +997,75 @@ def process_input(df, filename, num_features, cat_features):
 def prepare_data(debug):
     ### train
     train_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "train.npy"), allow_pickle=True)
-    train = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
+    train_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "train.pkl"))
     if debug:
         train_ids = np.random.choice(train_ids, size=1000, replace=False)
-        train = train.loc[train["customer_ID"].isin(train_ids)].reset_index(drop=True)
+        train_df = train_df.loc[train_df["customer_ID"].isin(train_ids)].reset_index(drop=True)
 
     # preprocessing
-    train = preprocess(train)
+    train_df = preprocess(train_df)
 
-    # main process
+    # aggregate
     print("#" * 10, "train", "#" * 10)
-    train, num_features, cat_features = aggregate_features(train)
-    train, num_features, cat_features = make_features(train, TYPE="train", num_features=num_features, cat_features=cat_features)
-    num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features)
+    num_features, cat_features = aggregate_features(train_df, filename="train.pkl")
 
     ### public
     public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
-    test = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
+    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
     if debug:
         public_ids = np.random.choice(public_ids, size=1000, replace=False)
 
-    public = test.loc[test["customer_ID"].isin(public_ids)]
-    del test
+    public_df = test_df.loc[test_df["customer_ID"].isin(public_ids)]
+    del test_df
     gc.collect()
 
     # preprocessing
-    public = preprocess(public)
+    public_df = preprocess(public_df)
 
-    # main process
+    # aggregate
     print("#" * 10, "public", "#" * 10)
-    public, _, _ = aggregate_features(public)
-    public, _, _ = make_features(public, TYPE="public", num_features=num_features, cat_features=cat_features)
-    _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = aggregate_features(public_df, filename="public.pkl")
 
     ### ptivate
     private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
-    test = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
+    test_df = pd.read_pickle(Path(INPUT_INTEGER_PICKLE_DIR, "test.pkl"))
     if debug:
         private_ids = np.random.choice(private_ids, size=1000, replace=False)
 
-    private = test.loc[test["customer_ID"].isin(private_ids)]
-    del test
+    private_df = test_df.loc[test_df["customer_ID"].isin(private_ids)]
+    del test_df
     gc.collect()
 
     # preprocessing
-    private = preprocess(private)
+    private_df = preprocess(private_df)
 
-    # main process
+    # aggregation
     print("#" * 10, "private", "#" * 10)
-    private, _, _ = aggregate_features(private)
-    private, _, _ = make_features(private, TYPE="private", num_features=num_features, cat_features=cat_features)
-    _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = aggregate_features(private_df, filename="private.pkl")
+
+    ### make features
+    num_features, cat_features = make_features(
+        filenames=[
+            "train.pkl",
+            "public.pkl",
+            "private.pkl",
+        ],
+        output_filename="additive_features.pkl",
+        num_features=num_features,
+        cat_features=cat_features,
+    )
+
+    ### process_input
+    num_features, cat_features = process_input(
+        filenames=[
+            "train.pkl",
+            "public.pkl",
+            "private.pkl",
+        ],
+        additive_features_filename="additive_features.pkl",
+        num_features=num_features,
+        cat_features=cat_features,
+    )
 
     ### labels
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})

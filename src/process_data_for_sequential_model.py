@@ -35,7 +35,6 @@ import pandas as pd
 import cupy
 import cudf
 import cuml
-from sequential_model_work import R_FEATURES
 
 # utils
 from utils import *
@@ -227,7 +226,7 @@ def preprocess(df: pd.DataFrame):
     ]
     df.drop(columns=dropcols, inplace=True)
 
-    return df[[col for col in R_FEATURES]]
+    return df
 
 
 def make_features(df: pd.DataFrame):
@@ -258,7 +257,7 @@ def make_features(df: pd.DataFrame):
         values = []
         for bcol in ["B_11", "B_14", "B_17"] + ["D_39", "D_131"] + ["S_16", "S_23"]:
             for pcol in ["P_2", "P_3"]:
-                if bcol in df.columns:
+                if bcol in df.columns and pcol in df.columns:
                     name = f"{bcol}_{pcol}_diff"
                     values.append((df[bcol] - df[pcol]).rename(name).astype(pd.Float32Dtype()))
                     num_features.append(name)
@@ -271,10 +270,22 @@ def make_features(df: pd.DataFrame):
         df = pd.get_dummies(df, columns=cat_features, drop_first=False, dummy_na=True)
         cat_features = [col for col in df.columns if col not in num_features + ["S_2", "customer_ID"]]
 
-    # isna
+    # num features
     with trace.timer("process num features"):
         values = []
-        for col in num_features.copy():
+
+        lowers = (cudf.from_pandas(df[num_features]).quantile(0.01)).to_pandas()
+        uppers = (cudf.from_pandas(df[num_features]).quantile(0.99)).to_pandas()
+
+        for col in tqdm(num_features.copy(), desc="process num features"):
+            # compute round features
+            if pd.api.types.is_float_dtype(df[col]):
+                df[col] = df[col].round(2)
+
+            # clip outliers
+            df[col].clip(lowers[col], uppers[col], inplace=True)
+
+            # compute na index
             if col not in NA_FEATURES:
                 continue
 
@@ -304,6 +315,7 @@ def scale_features(df, num_features, cat_features, type="train"):
             # scaler = QuantileTransformer(
             #     n_quantiles=1000,
             #     output_distribution="normal",
+            #     random_state=SEED,
             #     copy=True,
             # )
 
@@ -314,6 +326,7 @@ def scale_features(df, num_features, cat_features, type="train"):
         else:
             raise ValueError()
 
+        print(f"#num features: {len(num_features)}, #cat features: {len(cat_features)}")
         num_values = pd.DataFrame(
             scaler.transform(df[num_features].astype(np.float32)),
             columns=num_features,
