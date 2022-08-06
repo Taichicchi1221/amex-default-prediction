@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp016"
-EXPERIMENT_DESC = "transformer base"
+EXPERIMENT_NAME = "seq_exp017"
+EXPERIMENT_DESC = "transformer clip(0.01)"
 
 # ====================================================
 # util
