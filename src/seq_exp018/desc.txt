@@ -1,0 +1,1 @@
+transformer clip(0.05)

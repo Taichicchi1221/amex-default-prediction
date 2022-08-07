@@ -274,7 +274,17 @@ def make_features(df: pd.DataFrame):
     with trace.timer("process num features"):
         values = []
 
-        for col in num_features.copy():
+        lowers = (cudf.from_pandas(df[num_features]).quantile(0.01)).to_pandas()
+        uppers = (cudf.from_pandas(df[num_features]).quantile(0.99)).to_pandas()
+
+        for col in tqdm(num_features.copy(), desc="process num features"):
+            # compute round features
+            if pd.api.types.is_float_dtype(df[col]):
+                df[col] = df[col].round(2)
+
+            # clip outliers
+            df[col].clip(lowers[col], uppers[col], inplace=True)
+
             # compute na index
             if col in NA_FEATURES:
                 name = f"{col}_isna"
@@ -295,38 +305,6 @@ def make_features(df: pd.DataFrame):
 
 def scale_features(df, num_features, cat_features, type="train"):
     trace = Trace()
-
-    with trace.timer("log transform"):
-        if type == "train":
-            skewness = df[num_features].skew()
-            skewness.to_pickle("skewness.pkl")
-
-        elif type in ("public", "private"):
-            skewness = pd.read_pickle("skewness.pkl")
-
-        else:
-            raise ValueError()
-
-        for col in num_features:
-            if abs(skewness[col]) > 1.0:
-                df[col] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
-
-    with trace.timer("clip outliers"):
-        if type == "train":
-            lowers = (cudf.from_pandas(df[num_features]).quantile(0.01)).to_pandas()
-            uppers = (cudf.from_pandas(df[num_features]).quantile(0.99)).to_pandas()
-            lowers.to_pickle("lowers.pkl")
-            uppers.to_pickle("uppers.pkl")
-
-        elif type in ("public", "private"):
-            lowers = pd.read_pickle("lowers.pkl")
-            uppers = pd.read_pickle("uppers.pkl")
-
-        else:
-            raise ValueError()
-
-        for col in num_features:
-            df[col].clip(lowers[col], uppers[col], inplace=True)
 
     with trace.timer("scale features"):
         if type == "train":

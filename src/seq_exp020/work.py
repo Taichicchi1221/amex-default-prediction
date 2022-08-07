@@ -307,18 +307,13 @@ PARAMS = {
         "type": "Transformer",
         "label_smoothing": 0.00,
         "params": {
-            ##### Transformer
-            "encoder_num_layers": 6,  # Transformer
-            "encoder_dropout": 0.25,  # Transformer
-            "encoder_d_model": 128,  # Transformer
-            "encoder_nhead": 8,  # Transformer
-            ##### LSTM, GRU
-            # "encoder_num_blocks": 6,  # LSTM, GRU
-            # "encoder_dropout_list": [0.25] * 4, # LSTM, GRU, # len == encoder_num_blocks
+            "encoder_num_blocks": 6,
+            "encoder_dropout_list": [0.25] * 32,  # len == encoder_num_blocks
+            "encoder_d_model_list": [128] * 32,  # Transformer # len == encoder_num_blocks
+            "encoder_nhead_list": [8] * 32,  # Transformer # len == encoder_num_blocks
             # "encoder_hidden_size_list": [512] * 4,  # LSTM, GRU, # len == encoder_num_blocks
             # "encoder_num_layers_list": [1] * 4,  # LSTM, GRU, len == encoder_num_blocks
             # "encoder_bidirectional": False,  # LSTM, GRU
-            ##### classifier
             "classifier_hidden_size": 64,
             "classifier_dropout": 0.25,
         },
@@ -615,30 +610,6 @@ def get_scheduler(name, optimizer, params):
 # ====================================================
 # loss
 # ====================================================
-
-
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.logits = logits
-        self.reduce = reduce
-
-    def forward(self, inputs, targets):
-        if self.logits:
-            BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
-        else:
-            BCE_loss = F.binary_cross_entropy(inputs, targets, reduction="none")
-        pt = torch.exp(-BCE_loss)
-        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
-
-        if self.reduce:
-            return torch.mean(F_loss)
-        else:
-            return F_loss
-
-
 def get_loss(name, params):
     return eval(name)(**params)
 
@@ -649,7 +620,10 @@ def get_loss(name, params):
 class Model(pl.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
-        self.model = eval("BaseModel" + PARAMS["model"]["type"])(input_dim, **PARAMS["model"]["params"])
+        self.model = eval(f"BaseModel{PARAMS['model']['type']}")(
+            input_dim,
+            **PARAMS["model"]["params"],
+        )
 
         self.label_smoothing = PARAMS["model"]["label_smoothing"]
         self.criterion = get_loss(PARAMS["loss"]["name"], PARAMS["loss"]["params"])
@@ -771,6 +745,7 @@ class BaseModelGRU(torch.nn.Module):
                     num_layers=encoder_num_layers_list[i],
                     dropout=encoder_dropout_list[i],
                     bidirectional=encoder_bidirectional,
+                    batch_first=True,
                 )
                 for i in range(encoder_num_blocks)
             ]
@@ -787,10 +762,8 @@ class BaseModelGRU(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
@@ -817,6 +790,7 @@ class BaseModelLSTM(torch.nn.Module):
                     num_layers=encoder_num_layers_list[i],
                     dropout=encoder_dropout_list[i],
                     bidirectional=encoder_bidirectional,
+                    batch_first=True,
                 )
                 for i in range(encoder_num_blocks)
             ]
@@ -833,10 +807,8 @@ class BaseModelLSTM(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
@@ -845,30 +817,32 @@ class BaseModelTransformer(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_d_model,
-        encoder_nhead,
-        encoder_dropout,
+        encoder_num_blocks,
+        encoder_d_model_list,
+        encoder_nhead_list,
+        encoder_dropout_list,
         classifier_hidden_size,
         classifier_dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.positional_encoder = Summer(PositionalEncoding1D(input_dim))
-        self.linear = nn.Linear(input_dim, encoder_d_model)
+        self.linear = nn.Linear(input_dim, encoder_d_model_list[0])
 
-        self.encoder = nn.TransformerEncoder(
-            encoder_layer=nn.TransformerEncoderLayer(
-                d_model=encoder_d_model,
-                nhead=encoder_nhead,
-                dropout=encoder_dropout,
-                activation=F.gelu,
-            ),
-            num_layers=encoder_num_layers,
+        self.encoders = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=encoder_d_model_list[i],
+                    nhead=encoder_nhead_list[i],
+                    dropout=encoder_dropout_list[i],
+                    activation=F.gelu,
+                    batch_first=True,
+                )
+                for i in range(encoder_num_blocks)
+            ]
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(encoder_d_model, classifier_hidden_size),
+            nn.Linear(encoder_d_model_list[-1], classifier_hidden_size),
             nn.BatchNorm1d(classifier_hidden_size),
             nn.Dropout(classifier_dropout),
             nn.SiLU(),
@@ -876,11 +850,9 @@ class BaseModelTransformer(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
-        x = self.positional_encoder(x)
         x = self.linear(x)
-        x = self.encoder(x)
-        x = x.permute((1, 0, 2))
+        for encoder in self.encoders:
+            x = encoder(x)
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
@@ -950,6 +922,28 @@ class Summer(nn.Module):
             tensor.size, penc.size
         )
         return tensor + penc
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.logits = logits
+        self.reduce = reduce
+
+    def forward(self, inputs, targets):
+        if self.logits:
+            BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+        else:
+            BCE_loss = F.binary_cross_entropy(inputs, targets, reduction="none")
+        pt = torch.exp(-BCE_loss)
+        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+
+        if self.reduce:
+            return torch.mean(F_loss)
+        else:
+            return F_loss
 
 
 # ====================================================

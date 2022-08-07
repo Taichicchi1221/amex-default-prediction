@@ -14,39 +14,39 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-# WORKFILE_NAME = "customer_aggregation_work.py"
-# DEPENDENT_FILES = ["utils.py"]
-# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
-# WORKFILE_TO_CLEAR = [
-#     "train.pkl",
-#     "train_labels.pkl",
-#     "public.pkl",
-#     "private.pkl",
-#     "additive_features.pkl",
-#     "num_features.pkl",
-#     "cat_features.pkl",
-#     "train_ids.npy",
-#     "public_ids.npy",
-#     "private_ids.npy",
-# ]
-########################## customer aggregation ##########################
-
-
-########################## sequential model ##############################
-WORKFILE_NAME = "sequential_model_work.py"
-DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
-MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+WORKFILE_NAME = "customer_aggregation_work.py"
+DEPENDENT_FILES = ["utils.py"]
+MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 WORKFILE_TO_CLEAR = [
-    "train.npy",
-    "train_labels.npy",
-    "public.npy",
-    "private.npy",
+    "train.pkl",
+    "train_labels.pkl",
+    "public.pkl",
+    "private.pkl",
+    "additive_features.pkl",
     "num_features.pkl",
     "cat_features.pkl",
     "train_ids.npy",
     "public_ids.npy",
     "private_ids.npy",
 ]
+########################## customer aggregation ##########################
+
+
+########################## sequential model ##############################
+# WORKFILE_NAME = "sequential_model_work.py"
+# DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
+# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+# WORKFILE_TO_CLEAR = [
+#     "train.npy",
+#     "train_labels.npy",
+#     "public.npy",
+#     "private.npy",
+#     "num_features.pkl",
+#     "cat_features.pkl",
+#     "train_ids.npy",
+#     "public_ids.npy",
+#     "private_ids.npy",
+# ]
 ########################## sequential model ##############################
 
 
@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp017"
-EXPERIMENT_DESC = "transformer clip(0.01)"
+EXPERIMENT_NAME = "exp035"
+EXPERIMENT_DESC = "lgbmdart add features"
 
 # ====================================================
 # util

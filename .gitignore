@@ -1,5 +1,6 @@
 input/*
 work/*
 mlruns/*
+experiments/*
 kaggle.json
 __pycache__

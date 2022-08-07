@@ -80,7 +80,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 10
+N_SPLITS = 5
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -307,24 +307,19 @@ PARAMS = {
         "type": "Transformer",
         "label_smoothing": 0.00,
         "params": {
-            ##### Transformer
-            "encoder_num_layers": 6,  # Transformer
-            "encoder_dropout": 0.25,  # Transformer
-            "encoder_d_model": 128,  # Transformer
-            "encoder_nhead": 8,  # Transformer
-            ##### LSTM, GRU
-            # "encoder_num_blocks": 6,  # LSTM, GRU
-            # "encoder_dropout_list": [0.25] * 4, # LSTM, GRU, # len == encoder_num_blocks
+            "encoder_num_blocks": 8,
+            "encoder_dropout_list": [0.25] * 8,  # len == encoder_num_blocks
+            "encoder_d_model_list": [256] * 8,  # Transformer # len == encoder_num_blocks
+            "encoder_nhead_list": [8] * 8,  # Transformer # len == encoder_num_blocks
             # "encoder_hidden_size_list": [512] * 4,  # LSTM, GRU, # len == encoder_num_blocks
             # "encoder_num_layers_list": [1] * 4,  # LSTM, GRU, len == encoder_num_blocks
             # "encoder_bidirectional": False,  # LSTM, GRU
-            ##### classifier
-            "classifier_hidden_size": 64,
+            "classifier_hidden_size": 128,
             "classifier_dropout": 0.25,
         },
     },
     "trainer": {
-        "max_epochs": 20,
+        "max_epochs": 15,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -338,21 +333,21 @@ PARAMS = {
     },
     "dataloader": {
         "train": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": True,
             "drop_last": True,
             "pin_memory": True,
             "num_workers": 2,
         },
         "valid": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
             "num_workers": 0,
         },
         "test": {
-            "batch_size": 512,
+            "batch_size": 256,
             "shuffle": False,
             "drop_last": False,
             "pin_memory": False,
@@ -360,36 +355,31 @@ PARAMS = {
         },
     },
     "optimizer": {
-        "name": "torch.optim.AdamW",
+        "cls": torch.optim.AdamW,
         "params": {
             "lr": 2.0e-05,
             "weight_decay": 0.00,
         },
     },
     "scheduler": {
-        "name": "torch.optim.lr_scheduler.ReduceLROnPlateau",
-        "params": {
-            "mode": "max",  # ReduceLROnPlateau
-            "factor": 0.2,  # ReduceLROnPlateau
-            "patience": 3,  # ReduceLROnPlateau
-            "eps": 1.0e-06,  # ReduceLROnPlateau
-            "verbose": True,
-        },
-        # "name": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        # "cls": torch.optim.lr_scheduler.ReduceLROnPlateau,
         # "params": {
-        #     "T_0": 1,
-        #     "T_mult": 2,
-        #     "verbose": False,
+        #     "mode": "max",  # ReduceLROnPlateau
+        #     "factor": 0.2,  # ReduceLROnPlateau
+        #     "patience": 2,  # ReduceLROnPlateau
+        #     "eps": 1.0e-06,  # ReduceLROnPlateau
+        #     "verbose": True,
         # },
+        "cls": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        "params": {
+            "T_0": 1,
+            "T_mult": 2,
+            "verbose": False,
+        },
     },
     "loss": {
-        # "name": "nn.BCEWithLogitsLoss",
-        # "params": {},
-        "name": "FocalLoss",
-        "params": {
-            "logits": True,
-            "reduce": True,
-        },
+        "cls": nn.BCEWithLogitsLoss,
+        "params": {},
     },
 }
 
@@ -399,6 +389,7 @@ if DEBUG:
     PARAMS["dataloader"]["valid"]["batch_size"] = 32
     PARAMS["dataloader"]["test"]["batch_size"] = 32
     PARAMS["trainer"]["max_epochs"] = 3
+
 
 # ====================================================
 # plots
@@ -602,45 +593,21 @@ class MixupCollate:
 
 
 # ====================================================
-# optimizer, scheduler
+# dataset, dataloader
 # ====================================================
-def get_optimizer(name, model_parameters, params):
-    return eval(name)(model_parameters, **params)
+def get_optimizer(cls_, model_parameters, params):
+    return cls_(model_parameters, **params)
 
 
-def get_scheduler(name, optimizer, params):
-    return eval(name)(optimizer, **params)
+def get_scheduler(cls_, optimizer, params):
+    return cls_(optimizer, **params)
 
 
 # ====================================================
 # loss
 # ====================================================
-
-
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.logits = logits
-        self.reduce = reduce
-
-    def forward(self, inputs, targets):
-        if self.logits:
-            BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
-        else:
-            BCE_loss = F.binary_cross_entropy(inputs, targets, reduction="none")
-        pt = torch.exp(-BCE_loss)
-        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
-
-        if self.reduce:
-            return torch.mean(F_loss)
-        else:
-            return F_loss
-
-
-def get_loss(name, params):
-    return eval(name)(**params)
+def get_loss(cls_, params):
+    return cls_(**params)
 
 
 # ====================================================
@@ -649,18 +616,21 @@ def get_loss(name, params):
 class Model(pl.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
-        self.model = eval("BaseModel" + PARAMS["model"]["type"])(input_dim, **PARAMS["model"]["params"])
+        self.model = eval(f"BaseModel{PARAMS['model']['type']}")(
+            input_dim,
+            **PARAMS["model"]["params"],
+        )
 
         self.label_smoothing = PARAMS["model"]["label_smoothing"]
-        self.criterion = get_loss(PARAMS["loss"]["name"], PARAMS["loss"]["params"])
+        self.criterion = get_loss(PARAMS["loss"]["cls"], PARAMS["loss"]["params"])
 
         self.optimizer = get_optimizer(
-            PARAMS["optimizer"]["name"],
+            PARAMS["optimizer"]["cls"],
             model_parameters=self.model.parameters(),
             params=PARAMS["optimizer"]["params"],
         )
         self.scheduler = get_scheduler(
-            PARAMS["scheduler"]["name"],
+            PARAMS["scheduler"]["cls"],
             optimizer=self.optimizer,
             params=PARAMS["scheduler"]["params"],
         )
@@ -771,6 +741,7 @@ class BaseModelGRU(torch.nn.Module):
                     num_layers=encoder_num_layers_list[i],
                     dropout=encoder_dropout_list[i],
                     bidirectional=encoder_bidirectional,
+                    batch_first=True,
                 )
                 for i in range(encoder_num_blocks)
             ]
@@ -787,10 +758,8 @@ class BaseModelGRU(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
@@ -817,6 +786,7 @@ class BaseModelLSTM(torch.nn.Module):
                     num_layers=encoder_num_layers_list[i],
                     dropout=encoder_dropout_list[i],
                     bidirectional=encoder_bidirectional,
+                    batch_first=True,
                 )
                 for i in range(encoder_num_blocks)
             ]
@@ -833,10 +803,8 @@ class BaseModelLSTM(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
@@ -845,30 +813,32 @@ class BaseModelTransformer(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_d_model,
-        encoder_nhead,
-        encoder_dropout,
+        encoder_num_blocks,
+        encoder_d_model_list,
+        encoder_nhead_list,
+        encoder_dropout_list,
         classifier_hidden_size,
         classifier_dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.positional_encoder = Summer(PositionalEncoding1D(input_dim))
-        self.linear = nn.Linear(input_dim, encoder_d_model)
+        self.linear = nn.Linear(input_dim, encoder_d_model_list[0])
 
-        self.encoder = nn.TransformerEncoder(
-            encoder_layer=nn.TransformerEncoderLayer(
-                d_model=encoder_d_model,
-                nhead=encoder_nhead,
-                dropout=encoder_dropout,
-                activation=F.gelu,
-            ),
-            num_layers=encoder_num_layers,
+        self.encoders = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=encoder_d_model_list[i],
+                    nhead=encoder_nhead_list[i],
+                    dropout=encoder_dropout_list[i],
+                    activation=F.gelu,
+                    batch_first=True,
+                )
+                for i in range(encoder_num_blocks)
+            ]
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(encoder_d_model, classifier_hidden_size),
+            nn.Linear(encoder_d_model_list[-1], classifier_hidden_size),
             nn.BatchNorm1d(classifier_hidden_size),
             nn.Dropout(classifier_dropout),
             nn.SiLU(),
@@ -876,11 +846,9 @@ class BaseModelTransformer(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
-        x = self.positional_encoder(x)
         x = self.linear(x)
-        x = self.encoder(x)
-        x = x.permute((1, 0, 2))
+        for encoder in self.encoders:
+            x = encoder(x)
         output = self.classifier(x[:, -1, :])
         return output.view(-1)
 
