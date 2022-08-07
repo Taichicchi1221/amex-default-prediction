@@ -716,7 +716,7 @@ def get_model(params):
     if params["type"] == "LightGBM":
         return LightGBMModel(params)
 
-    raise NotImplementedError(f"improper model type: {params['type']}")
+    raise NotImplementedError(f"invalid model type: {params['type']}")
 
 
 # ====================================================

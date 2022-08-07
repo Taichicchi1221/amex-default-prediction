@@ -304,27 +304,35 @@ R_FEATURES = [
 
 PARAMS = {
     "model": {
-        "type": "Transformer",
-        "label_smoothing": 0.00,
-        "params": {
-            ##### Transformer
-            "encoder_num_layers": 6,  # Transformer
-            "encoder_dropout": 0.25,  # Transformer
-            "encoder_d_model": 128,  # Transformer
-            "encoder_nhead": 8,  # Transformer
-            ##### LSTM, GRU
-            # "encoder_num_blocks": 6,  # LSTM, GRU
-            # "encoder_dropout_list": [0.25] * 4, # LSTM, GRU, # len == encoder_num_blocks
-            # "encoder_hidden_size_list": [512] * 4,  # LSTM, GRU, # len == encoder_num_blocks
-            # "encoder_num_layers_list": [1] * 4,  # LSTM, GRU, len == encoder_num_blocks
-            # "encoder_bidirectional": False,  # LSTM, GRU
-            ##### classifier
-            "classifier_hidden_size": 64,
-            "classifier_dropout": 0.25,
+        "label_smoothing": 0.10,
+        "encoder": {
+            "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder}
+            "params": {
+                ##### Transformer
+                "num_layers": 4,  # Transformer
+                "dropout": 0.25,  # Transformer
+                "d_model": 512,  # Transformer
+                "nhead": 8,  # Transformer
+                ##### LSTM, GRU
+                # "num_blocks": 6,  # LSTM, GRU
+                # "dropout_list": [0.25] * 4, # LSTM, GRU, # len == encoder_num_blocks
+                # "hidden_size_list": [512] * 4,  # LSTM, GRU, # len == encoder_num_blocks
+                # "num_layers_list": [1] * 4,  # LSTM, GRU, len == encoder_num_blocks
+                # "bidirectional": False,  # LSTM, GRU
+            },
+        },
+        "head": {
+            "type": "SimpleHead",  # {SimpleHead, MultiSampleDropoutHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
+            "params": {
+                "dropout": 0.25,  # SimpleHead, MultiSampleDropoutHead, LSTMHead, GRUHead
+                # "num_layers": 5,  # MultiSampleDropoutHead
+                # "hidden_size": 256, # CNNHead
+                # "kernel_size": 5, # CNNHead
+            },
         },
     },
     "trainer": {
-        "max_epochs": 20,
+        "max_epochs": 30,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -367,29 +375,29 @@ PARAMS = {
         },
     },
     "scheduler": {
-        "name": "torch.optim.lr_scheduler.ReduceLROnPlateau",
-        "params": {
-            "mode": "max",  # ReduceLROnPlateau
-            "factor": 0.2,  # ReduceLROnPlateau
-            "patience": 3,  # ReduceLROnPlateau
-            "eps": 1.0e-06,  # ReduceLROnPlateau
-            "verbose": True,
-        },
-        # "name": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        # "name": "torch.optim.lr_scheduler.ReduceLROnPlateau",
         # "params": {
-        #     "T_0": 1,
-        #     "T_mult": 2,
-        #     "verbose": False,
+        #     "mode": "max",  # ReduceLROnPlateau
+        #     "factor": 0.2,  # ReduceLROnPlateau
+        #     "patience": 3,  # ReduceLROnPlateau
+        #     "eps": 1.0e-06,  # ReduceLROnPlateau
+        #     "verbose": True,
         # },
+        "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
+        "params": {
+            "T_0": 1,
+            "T_mult": 2,
+            "verbose": False,
+        },
     },
     "loss": {
-        # "name": "nn.BCEWithLogitsLoss",
-        # "params": {},
-        "name": "FocalLoss",
-        "params": {
-            "logits": True,
-            "reduce": True,
-        },
+        "name": "nn.BCEWithLogitsLoss",
+        "params": {},
+        # "name": "FocalLoss",
+        # "params": {
+        #     "logits": True,
+        #     "reduce": True,
+        # },
     },
 }
 
@@ -649,14 +657,22 @@ def get_loss(name, params):
 class Model(pl.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
-        self.model = eval("BaseModel" + PARAMS["model"]["type"])(input_dim, **PARAMS["model"]["params"])
+        self.encoder = eval(PARAMS["model"]["encoder"]["type"])(
+            input_dim=input_dim,
+            **PARAMS["model"]["encoder"]["params"],
+        )
+        self.head = eval(PARAMS["model"]["head"]["type"])(
+            in_features=self.encoder.output_dim,
+            out_features=1,
+            **PARAMS["model"]["head"]["params"],
+        )
 
         self.label_smoothing = PARAMS["model"]["label_smoothing"]
         self.criterion = get_loss(PARAMS["loss"]["name"], PARAMS["loss"]["params"])
 
         self.optimizer = get_optimizer(
             PARAMS["optimizer"]["name"],
-            model_parameters=self.model.parameters(),
+            model_parameters=self.parameters(),
             params=PARAMS["optimizer"]["params"],
         )
         self.scheduler = get_scheduler(
@@ -676,7 +692,9 @@ class Model(pl.LightningModule):
         }
 
     def forward(self, x):
-        return self.model(x)
+        x = self.encoder(x)
+        x = self.head(x)
+        return x.view(-1)
 
     def configure_optimizers(self):
         return {
@@ -749,140 +767,233 @@ class Model(pl.LightningModule):
         return super().on_validation_epoch_end()
 
 
-class BaseModelGRU(torch.nn.Module):
+class SimpleHead(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        dropout,
+    ):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(in_features)
+        self.dropout = nn.Dropout(dropout)
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+
+    def forward(self, last_hidden_state):
+        x = self.layer_norm(last_hidden_state[:, -1, :])
+        x = self.dropout(x)
+        output = self.linear(x)
+        return output
+
+
+class MultiSampleDropoutHead(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        dropout,
+        num_layers,
+    ):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(in_features)
+        self.dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
+        self.linears = nn.ModuleList([nn.Linear(in_features, out_features) for _ in range(num_layers)])
+
+    def forward(self, last_hidden_state):
+        x = self.layer_norm(last_hidden_state[:, -1, :])
+        output = torch.stack([regressor(dropout(x)) for regressor, dropout in zip(self.linears, self.dropouts)]).mean(axis=0)
+        return output
+
+
+class MeanMaxPoolingHead(nn.Module):
+    def __init__(self, in_features, out_features) -> None:
+        super().__init__()
+        self.linear = nn.Linear(in_features * 2, out_features)
+
+    def forward(self, last_hidden_state):
+        mean_pooling_embeddings = torch.mean(last_hidden_state, 1)
+        max_pooling_embeddings, _ = torch.max(last_hidden_state, 1)
+        mean_max_embeddings = torch.cat(
+            (
+                mean_pooling_embeddings,
+                max_pooling_embeddings,
+            ),
+            1,
+        )
+        logits = self.linear(mean_max_embeddings)  # twice the hidden size
+
+        return logits
+
+
+class LSTMHead(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        dropout,
+    ):
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_size=in_features,
+            hidden_size=in_features,
+            batch_first=True,
+            bidirectional=True,
+            dropout=dropout,
+        )
+        self.layer_norm = nn.LayerNorm(in_features * 2)
+        self.linear = nn.Linear(in_features * 2, out_features)
+
+    def forward(self, last_hidden_state):
+        x, _ = self.lstm(last_hidden_state, None)
+        x = self.layer_norm(x[:, -1, :])
+        output = self.linear(x)
+        return output
+
+
+class GRUHead(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        dropout,
+    ):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=in_features,
+            hidden_size=in_features,
+            batch_first=True,
+            bidirectional=True,
+            dropout=dropout,
+        )
+        self.layer_norm = nn.LayerNorm(in_features * 2)
+        self.linear = nn.Linear(in_features * 2, out_features)
+
+    def forward(self, last_hidden_state):
+        x, _ = self.gru(last_hidden_state, None)
+        x = self.layer_norm(x[:, -1, :])
+        output = self.linear(x)
+        return output.squeeze(-1)
+
+
+class CNNHead(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        hidden_size,
+        kernel_size,
+    ):
+        super().__init__()
+        self.cnn1 = nn.Conv1d(in_features, hidden_size, kernel_size=kernel_size, padding=1)
+        self.cnn2 = nn.Conv1d(hidden_size, out_features, kernel_size=kernel_size, padding=1)
+        self.prelu = nn.PReLU()
+
+    def forward(self, last_hidden_state):
+        x = last_hidden_state.permute(0, 2, 1)
+        x = self.cnn1(x)
+        x = self.prelu(x)
+        x = self.cnn2(x)
+        x, _ = torch.max(x, 2)
+        return x
+
+
+class GRUEncoder(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_blocks,
-        encoder_num_layers_list,
-        encoder_hidden_size_list,
-        encoder_dropout_list,
-        encoder_bidirectional,
-        classifier_hidden_size,
-        classifier_dropout,
+        num_blocks,
+        num_layers_list,
+        hidden_size_list,
+        dropout_list,
+        bidirectional,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.encoders = nn.ModuleList(
             [
                 nn.GRU(
-                    input_size=input_dim if i == 0 else encoder_hidden_size_list[i - 1],
-                    hidden_size=encoder_hidden_size_list[i],
-                    num_layers=encoder_num_layers_list[i],
-                    dropout=encoder_dropout_list[i],
-                    bidirectional=encoder_bidirectional,
+                    input_size=input_dim if i == 0 else hidden_size_list[i - 1],
+                    hidden_size=hidden_size_list[i],
+                    num_layers=num_layers_list[i],
+                    dropout=dropout_list[i],
+                    bidirectional=bidirectional,
+                    batch_first=True,
                 )
-                for i in range(encoder_num_blocks)
+                for i in range(num_blocks)
             ]
         )
 
-        output_dim = encoder_hidden_size_list[-1] * (2 if encoder_bidirectional else 1)
-
-        self.classifier = nn.Sequential(
-            nn.Linear(output_dim, classifier_hidden_size),
-            nn.BatchNorm1d(classifier_hidden_size),
-            nn.Dropout(classifier_dropout),
-            nn.SiLU(),
-            nn.Linear(classifier_hidden_size, 1),
-        )
+        self.output_dim = hidden_size_list[-1] * (2 if bidirectional else 1)
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
-        output = self.classifier(x[:, -1, :])
-        return output.view(-1)
+        return x
 
 
-class BaseModelLSTM(torch.nn.Module):
+class LSTMEncoder(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_blocks,
-        encoder_num_layers_list,
-        encoder_hidden_size_list,
-        encoder_dropout_list,
-        encoder_bidirectional,
-        classifier_hidden_size,
-        classifier_dropout,
+        num_blocks,
+        num_layers_list,
+        hidden_size_list,
+        dropout_list,
+        bidirectional,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.encoders = nn.ModuleList(
             [
                 nn.LSTM(
-                    input_size=input_dim if i == 0 else encoder_hidden_size_list[i - 1],
-                    hidden_size=encoder_hidden_size_list[i],
-                    num_layers=encoder_num_layers_list[i],
-                    dropout=encoder_dropout_list[i],
-                    bidirectional=encoder_bidirectional,
+                    input_size=input_dim if i == 0 else hidden_size_list[i - 1],
+                    hidden_size=hidden_size_list[i],
+                    num_layers=num_layers_list[i],
+                    dropout=dropout_list[i],
+                    bidirectional=bidirectional,
+                    batch_first=True,
                 )
-                for i in range(encoder_num_blocks)
+                for i in range(num_blocks)
             ]
         )
 
-        output_dim = encoder_hidden_size_list[-1] * (2 if encoder_bidirectional else 1)
-
-        self.classifier = nn.Sequential(
-            nn.Linear(output_dim, classifier_hidden_size),
-            nn.BatchNorm1d(classifier_hidden_size),
-            nn.Dropout(classifier_dropout),
-            nn.SiLU(),
-            nn.Linear(classifier_hidden_size, 1),
-        )
+        self.output_dim = hidden_size_list[-1] * (2 if bidirectional else 1)
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
         for encoder in self.encoders:
             x, _ = encoder(x)
-        x = x.permute((1, 0, 2))
-        output = self.classifier(x[:, -1, :])
-        return output.view(-1)
+        return x
 
 
-class BaseModelTransformer(torch.nn.Module):
+class TransformerEncoder(torch.nn.Module):
     def __init__(
         self,
         input_dim,
-        encoder_num_layers,
-        encoder_d_model,
-        encoder_nhead,
-        encoder_dropout,
-        classifier_hidden_size,
-        classifier_dropout,
+        num_layers,
+        d_model,
+        nhead,
+        dropout,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.positional_encoder = Summer(PositionalEncoding1D(input_dim))
-        self.linear = nn.Linear(input_dim, encoder_d_model)
+        self.linear = nn.Linear(input_dim, d_model)
 
         self.encoder = nn.TransformerEncoder(
             encoder_layer=nn.TransformerEncoderLayer(
-                d_model=encoder_d_model,
-                nhead=encoder_nhead,
-                dropout=encoder_dropout,
+                d_model=d_model,
+                nhead=nhead,
+                dropout=dropout,
                 activation=F.gelu,
+                batch_first=True,
             ),
-            num_layers=encoder_num_layers,
+            num_layers=num_layers,
         )
-
-        self.classifier = nn.Sequential(
-            nn.Linear(encoder_d_model, classifier_hidden_size),
-            nn.BatchNorm1d(classifier_hidden_size),
-            nn.Dropout(classifier_dropout),
-            nn.SiLU(),
-            nn.Linear(classifier_hidden_size, 1),
-        )
+        self.output_dim = d_model
 
     def forward(self, x):
-        x = x.permute((1, 0, 2))
-        x = self.positional_encoder(x)
         x = self.linear(x)
         x = self.encoder(x)
-        x = x.permute((1, 0, 2))
-        output = self.classifier(x[:, -1, :])
-        return output.view(-1)
+        return x
 
 
 def get_emb(sin_inp):

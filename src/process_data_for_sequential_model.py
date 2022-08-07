@@ -296,21 +296,23 @@ def make_features(df: pd.DataFrame):
 def scale_features(df, num_features, cat_features, type="train"):
     trace = Trace()
 
-    with trace.timer("log transform"):
-        if type == "train":
-            skewness = df[num_features].skew()
-            skewness.to_pickle("skewness.pkl")
+    ### log
+    # with trace.timer("log transform"):
+    #     if type == "train":
+    #         skewness = df[num_features].skew()
+    #         skewness.to_pickle("skewness.pkl")
 
-        elif type in ("public", "private"):
-            skewness = pd.read_pickle("skewness.pkl")
+    #     elif type in ("public", "private"):
+    #         skewness = pd.read_pickle("skewness.pkl")
 
-        else:
-            raise ValueError()
+    #     else:
+    #         raise ValueError()
 
-        for col in num_features:
-            if abs(skewness[col]) > 1.0:
-                df[col] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
+    #     for col in num_features:
+    #         if abs(skewness[col]) > 1.0:
+    #             df[col] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
 
+    ### outliers
     with trace.timer("clip outliers"):
         if type == "train":
             lowers = (cudf.from_pandas(df[num_features]).quantile(0.01)).to_pandas()
@@ -328,6 +330,7 @@ def scale_features(df, num_features, cat_features, type="train"):
         for col in num_features:
             df[col].clip(lowers[col], uppers[col], inplace=True)
 
+    ### scaling
     with trace.timer("scale features"):
         if type == "train":
 
