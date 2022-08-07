@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
 ########################## adversarial_validation ##########################
 
 
-EXPERIMENT_NAME = "seq_exp022"
-EXPERIMENT_DESC = "Transformer + CNNHead"
+EXPERIMENT_NAME = "seq_exp023"
+EXPERIMENT_DESC = "Transformer + CNNHead + FocalLoss"
 
 # ====================================================
 # util
