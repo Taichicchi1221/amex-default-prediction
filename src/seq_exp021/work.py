@@ -322,12 +322,12 @@ PARAMS = {
             },
         },
         "head": {
-            "type": "CNNHead",  # {SimpleHead, MultiSampleDropoutHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
+            "type": "MultiSampleDropoutHead",  # {SimpleHead, MultiSampleDropoutHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
             "params": {
-                # "dropout": 0.5,  # SimpleHead, MultiSampleDropoutHead, LSTMHead, GRUHead
-                # "num_layers": 5,  # MultiSampleDropoutHead
-                "hidden_size": 256, # CNNHead
-                "kernel_size": 3, # CNNHead
+                "dropout": 0.5,  # SimpleHead, MultiSampleDropoutHead, LSTMHead, GRUHead
+                "num_layers": 5,  # MultiSampleDropoutHead
+                # "hidden_size": 256, # CNNHead
+                # "kernel_size": 5, # CNNHead
             },
         },
     },
