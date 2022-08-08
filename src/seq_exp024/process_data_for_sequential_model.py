@@ -274,9 +274,13 @@ def make_features(df: pd.DataFrame):
     with trace.timer("process num features"):
         values = []
 
-        na_features = [col for col in num_features if col in NA_FEATURES]
-        values.append(df[na_features].isna().add_suffix("-isna"))
-        cat_features.extend([f"{col}-isna" for col in na_features])
+        for col in num_features.copy():
+            # compute na index
+            if col in NA_FEATURES:
+                name = f"{col}_isna"
+                value = df[col].isna().astype(np.int16).rename(name)
+                cat_features.append(name)
+                values.append(value)
 
         df = pd.concat([df] + values, axis=1)
         del values
@@ -294,8 +298,19 @@ def scale_features(df, num_features, cat_features, type="train"):
 
     ### log
     # with trace.timer("log transform"):
+    #     if type == "train":
+    #         skewness = df[num_features].skew()
+    #         skewness.to_pickle("skewness.pkl")
+
+    #     elif type in ("public", "private"):
+    #         skewness = pd.read_pickle("skewness.pkl")
+
+    #     else:
+    #         raise ValueError()
+
     #     for col in num_features:
-    #         df[col] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
+    #         if abs(skewness[col]) > 1.0:
+    #             df[col] = np.sign(df[col]) * np.log1p(np.abs(df[col]))
 
     ### outliers
     with trace.timer("clip outliers"):

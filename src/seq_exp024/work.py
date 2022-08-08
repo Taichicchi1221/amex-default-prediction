@@ -308,26 +308,21 @@ PARAMS = {
         "label_smoothing": 0.10,
         "encoder": {
             ### single encoder
-            # "type": "CNNEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            # "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder}
             # "params": {
             #     ##### Transformer
-            #     # "num_layers": 4,  # Transformer
-            #     # "dropout": 0.25,  # Transformer
-            #     # "d_model": 512,  # Transformer
-            #     # "nhead": 8,  # Transformer
+            #     "num_layers": 4,  # Transformer
+            #     "dropout": 0.25,  # Transformer
+            #     "d_model": 512,  # Transformer
+            #     "nhead": 8,  # Transformer
             #     ##### LSTM, GRU
             #     # "num_blocks": 4,  # LSTM, GRU
-            #     # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-            #     # "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+            #     # "dropout_list": [0.25, 0.20, 0.15, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+            #     # "hidden_size_list": [512, 256, 128, 64],  # LSTM, GRU, # len == encoder_num_blocks
             #     # "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
             #     # "bidirectional": False,  # LSTM, GRU
-            #     ##### CNN
-            #     # "num_blocks": 4,  # CNN
-            #     # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # CNN, # len == encoder_num_blocks
-            #     # "hidden_size_list": [1024, 512, 256, 128],  # CNN, # len == encoder_num_blocks
-            #     # "kernel_size_list": [3, 3, 3, 3],  # CNN, # len == encoder_num_blocks
             # },
-            ### concat encoder
+            ### concat
             "type": "ConcatEncoder",
             "params": [
                 {
@@ -343,9 +338,9 @@ PARAMS = {
                     "type": "LSTMEncoder",
                     "params": {
                         "num_blocks": 4,  # LSTM, GRU
-                        "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-                        "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                        "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+                        "dropout_list": [0.00, 0.00, 0.00, 0.00],  # LSTM, GRU, # len == encoder_num_blocks
+                        "hidden_size_list": [512, 512, 512, 512],  # LSTM, GRU, # len == encoder_num_blocks
+                        "num_layers_list": [1, 1, 1, 1],  # LSTM, GRU, len == encoder_num_blocks
                         "bidirectional": False,  # LSTM, GRU
                     },
                 },
@@ -353,9 +348,9 @@ PARAMS = {
                     "type": "GRUEncoder",
                     "params": {
                         "num_blocks": 4,  # LSTM, GRU
-                        "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-                        "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                        "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+                        "dropout_list": [0.00, 0.00, 0.00, 0.00],  # LSTM, GRU, # len == encoder_num_blocks
+                        "hidden_size_list": [512, 512, 512, 512],  # LSTM, GRU, # len == encoder_num_blocks
+                        "num_layers_list": [1, 1, 1, 1],  # LSTM, GRU, len == encoder_num_blocks
                         "bidirectional": False,  # LSTM, GRU
                     },
                 },
@@ -372,7 +367,7 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 15,
+        "max_epochs": 20,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -948,37 +943,6 @@ class CNNHead(nn.Module):
         x = self.prelu(x)
         x = self.cnn2(x)
         x, _ = torch.max(x, 2)
-        return x
-
-
-class CNNEncoder(torch.nn.Module):
-    def __init__(self, input_dim, params):
-        super().__init__()
-        self.input_dim = input_dim
-        self.encoders = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Conv1d(
-                        in_channels=input_dim if i == 0 else params["hidden_size_list"][i - 1],
-                        out_channels=params["hidden_size_list"][i],
-                        kernel_size=params["kernel_size_list"][i],
-                        padding="same",
-                    ),
-                    nn.BatchNorm1d(params["hidden_size_list"][i]),
-                    nn.PReLU(),
-                    nn.Dropout(params["dropout_list"][i]),
-                )
-                for i in range(params["num_blocks"])
-            ]
-        )
-
-        self.output_dim = params["hidden_size_list"][-1]
-
-    def forward(self, x):
-        x = x.permute(0, 2, 1)
-        for encoder in self.encoders:
-            x = encoder(x)
-        x = x.permute(0, 2, 1)
         return x
 
 
