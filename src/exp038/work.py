@@ -871,32 +871,32 @@ def aggregate_features(df):
         results.append(last_mean_frac.sort_index())
         del last_mean_frac
 
-        last_max_frac = (
-            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("max"))
-            .add_suffix("-last_max_frac")
-            .replace([-np.inf, np.inf], pd.NA)
-            .astype(pd.Float32Dtype())
-        )
-        results.append(last_max_frac.sort_index())
-        del last_max_frac
+        # last_max_frac = (
+        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("max"))
+        #     .add_suffix("-last_max_frac")
+        #     .replace([-np.inf, np.inf], pd.NA)
+        #     .astype(pd.Float32Dtype())
+        # )
+        # results.append(last_max_frac.sort_index())
+        # del last_max_frac
 
-        last_min_frac = (
-            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("min"))
-            .add_suffix("-last_min_frac")
-            .replace([-np.inf, np.inf], pd.NA)
-            .astype(pd.Float32Dtype())
-        )
-        results.append(last_min_frac.sort_index())
-        del last_min_frac
+        # last_min_frac = (
+        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("min"))
+        #     .add_suffix("-last_min_frac")
+        #     .replace([-np.inf, np.inf], pd.NA)
+        #     .astype(pd.Float32Dtype())
+        # )
+        # results.append(last_min_frac.sort_index())
+        # del last_min_frac
 
-        last_std_frac = (
-            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("std"))
-            .add_suffix("-last_std_frac")
-            .replace([-np.inf, np.inf], pd.NA)
-            .astype(pd.Float32Dtype())
-        )
-        results.append(last_std_frac.sort_index())
-        del last_std_frac
+        # last_std_frac = (
+        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("std"))
+        #     .add_suffix("-last_std_frac")
+        #     .replace([-np.inf, np.inf], pd.NA)
+        #     .astype(pd.Float32Dtype())
+        # )
+        # results.append(last_std_frac.sort_index())
+        # del last_std_frac
 
         last_first_frac = (
             (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("first"))
@@ -1276,54 +1276,37 @@ def training_main():
 
 
 def inference_main():
+    public_ids = np.load("public_ids.npy", allow_pickle=True)
+    private_ids = np.load("private_ids.npy", allow_pickle=True)
+    public = pd.read_pickle("public.pkl")
+    private = pd.read_pickle("private.pkl")
     num_features = joblib.load("num_features.pkl")
     cat_features = joblib.load("cat_features.pkl")
 
-    # public
-    public_ids = np.load("public_ids.npy", allow_pickle=True)
-    public = pd.read_pickle("public.pkl")
     public_predictions = []
-
+    private_predictions = []
     for fold in range(N_SPLITS):
         model = get_model(PARAMS)
         model.load(f"model_fold{fold}.pkl")
 
         public_predictions.append(model.inference(public))
+        private_predictions.append(model.inference(private))
 
+    # test
     public_prediction = np.mean(np.stack(public_predictions, axis=1), axis=1)
-
+    private_prediction = np.mean(np.stack(private_predictions, axis=1), axis=1)
     public_df = pd.DataFrame(
         {
             "customer_ID": public.index,
             "prediction": public_prediction,
         }
     )
-    del public
-    gc.collect()
-
-    # private
-    private_ids = np.load("private_ids.npy", allow_pickle=True)
-    private = pd.read_pickle("private.pkl")
-    private_predictions = []
-
-    for fold in range(N_SPLITS):
-        model = get_model(PARAMS)
-        model.load(f"model_fold{fold}.pkl")
-
-        private_predictions.append(model.inference(private))
-
-    private_prediction = np.mean(np.stack(private_predictions, axis=1), axis=1)
-
     private_df = pd.DataFrame(
         {
             "customer_ID": private.index,
             "prediction": private_prediction,
         }
     )
-    del private
-    gc.collect()
-
-    # test
     plot_distribution(public_df["prediction"], path="public_distribution.png")
     plot_distribution(private_df["prediction"], path="private_distribution.png")
     test_df = pd.concat([public_df, private_df], axis=0).reset_index(drop=True)

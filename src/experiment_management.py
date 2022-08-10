@@ -14,9 +14,30 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-# WORKFILE_NAME = "customer_aggregation_work.py"
-# DEPENDENT_FILES = ["utils.py"]
-# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+WORKFILE_NAME = "customer_aggregation_work.py"
+DEPENDENT_FILES = ["utils.py"]
+MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
+WORKFILE_TO_CLEAR = [
+    "train.pkl",
+    "train_labels.pkl",
+    "public.pkl",
+    "private.pkl",
+    "additive_features.pkl",
+    "num_features.pkl",
+    "cat_features.pkl",
+    "train_ids.npy",
+    "public_ids.npy",
+    "private_ids.npy",
+]
+EXPERIMENT_NAME = "exp039"
+EXPERIMENT_DESC = "lgbmdart"
+########################## customer aggregation ##########################
+
+
+########################## customer transpose ##########################
+# WORKFILE_NAME = "customer_transpose_work.py"
+# DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
+# MLFLOW_EXPERIMENT = "CUSTOMER_ID_TRANSPOSE"
 # WORKFILE_TO_CLEAR = [
 #     "train.pkl",
 #     "train_labels.pkl",
@@ -29,28 +50,27 @@ MLFLOW_DIR = "../mlruns"
 #     "public_ids.npy",
 #     "private_ids.npy",
 # ]
-# EXPERIMENT_NAME = "exp037"
+# EXPERIMENT_NAME = "trn_exp001"
 # EXPERIMENT_DESC = "xgboost"
 ########################## customer aggregation ##########################
 
-
 ########################## sequential model ##############################
-WORKFILE_NAME = "sequential_model_work.py"
-DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
-MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
-WORKFILE_TO_CLEAR = [
-    "train.npy",
-    "train_labels.npy",
-    "public.npy",
-    "private.npy",
-    "num_features.pkl",
-    "cat_features.pkl",
-    "train_ids.npy",
-    "public_ids.npy",
-    "private_ids.npy",
-]
-EXPERIMENT_NAME = "seq_exp026"
-EXPERIMENT_DESC = "TransformerEncoder + MultiSampleDropoutHead"
+# WORKFILE_NAME = "sequential_model_work.py"
+# DEPENDENT_FILES = ["utils.py", "process_data_for_sequential_model.py"]
+# MLFLOW_EXPERIMENT = "SEQUENTIAL_MODEL"
+# WORKFILE_TO_CLEAR = [
+#     "train.npy",
+#     "train_labels.npy",
+#     "public.npy",
+#     "private.npy",
+#     "num_features.pkl",
+#     "cat_features.pkl",
+#     "train_ids.npy",
+#     "public_ids.npy",
+#     "private_ids.npy",
+# ]
+# EXPERIMENT_NAME = "seq_exp026"
+# EXPERIMENT_DESC = "TransformerEncoder + MultiSampleDropoutHead"
 ########################## sequential model ##############################
 
 
