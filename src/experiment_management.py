@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
     "public_ids.npy",
     "private_ids.npy",
 ]
-EXPERIMENT_NAME = "seq_exp031"
-EXPERIMENT_DESC = "ConcatEncoder + MultiSampleDropoutHead"
+EXPERIMENT_NAME = "seq_exp032"
+EXPERIMENT_DESC = "ConcatEncoder + MeanMaxPoolingHead"
 ########################## sequential model ##############################
 
 

@@ -364,10 +364,10 @@ PARAMS = {
             ],
         },
         "head": {
-            "type": "MeanMaxPoolingHead",  # {SimpleHead, MultiSampleDropoutHead, AttentionHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
+            "type": "MultiSampleDropoutHead",  # {SimpleHead, MultiSampleDropoutHead, AttentionHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
             "params": {
-                # "dropout": 0.50,  # SimpleHead, MultiSampleDropoutHead, LSTMHead, GRUHead
-                # "num_layers": 5,  # MultiSampleDropoutHead
+                "dropout": 0.50,  # SimpleHead, MultiSampleDropoutHead, LSTMHead, GRUHead
+                "num_layers": 5,  # MultiSampleDropoutHead
                 # "hidden_size": 256,  # CNNHead, AttentionHead
                 # "kernel_size": 3,  # CNNHead
             },
