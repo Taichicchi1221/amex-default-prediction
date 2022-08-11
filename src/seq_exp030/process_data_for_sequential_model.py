@@ -423,6 +423,7 @@ def preprocess(df: pd.DataFrame):
     dropcols = [
         "R_1",
         "B_29",
+        "S_9",
     ]
     df.drop(columns=dropcols, inplace=True)
 

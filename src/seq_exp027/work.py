@@ -310,58 +310,58 @@ PARAMS = {
         "label_smoothing": 0.10,
         "encoder": {
             ### single encoder
-            # "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
-            # "params": {
-            #     ##### Transformer
-            #     "num_layers": 4,  # Transformer
-            #     "dropout": 0.25,  # Transformer
-            #     "d_model": 512,  # Transformer
-            #     "nhead": 8,  # Transformer
-            #     ##### LSTM, GRU
-            #     # "num_blocks": 4,  # LSTM, GRU
-            #     # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-            #     # "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
-            #     # "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
-            #     # "bidirectional": False,  # LSTM, GRU
-            #     ##### CNN
-            #     # "num_blocks": 4,  # CNN
-            #     # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # CNN, # len == encoder_num_blocks
-            #     # "hidden_size_list": [1024, 512, 256, 128],  # CNN, # len == encoder_num_blocks
-            #     # "kernel_size_list": [3, 3, 3, 3],  # CNN, # len == encoder_num_blocks
-            # },
+            "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            "params": {
+                ##### Transformer
+                "num_layers": 4,  # Transformer
+                "dropout": 0.25,  # Transformer
+                "d_model": 512,  # Transformer
+                "nhead": 8,  # Transformer
+                ##### LSTM, GRU
+                # "num_blocks": 4,  # LSTM, GRU
+                # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+                # "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+                # "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+                # "bidirectional": False,  # LSTM, GRU
+                ##### CNN
+                # "num_blocks": 4,  # CNN
+                # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # CNN, # len == encoder_num_blocks
+                # "hidden_size_list": [1024, 512, 256, 128],  # CNN, # len == encoder_num_blocks
+                # "kernel_size_list": [3, 3, 3, 3],  # CNN, # len == encoder_num_blocks
+            },
             ### concat encoder
-            "type": "ConcatEncoder",
-            "params": [
-                {
-                    "type": "TransformerEncoder",
-                    "params": {
-                        "num_layers": 4,  # Transformer
-                        "dropout": 0.25,  # Transformer
-                        "d_model": 512,  # Transformer
-                        "nhead": 8,  # Transformer
-                    },
-                },
-                {
-                    "type": "LSTMEncoder",
-                    "params": {
-                        "num_blocks": 4,  # LSTM, GRU
-                        "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-                        "hidden_size_list": [256, 256, 128, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                        "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
-                        "bidirectional": False,  # LSTM, GRU
-                    },
-                },
-                {
-                    "type": "GRUEncoder",
-                    "params": {
-                        "num_blocks": 4,  # LSTM, GRU
-                        "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-                        "hidden_size_list": [256, 256, 128, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                        "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
-                        "bidirectional": False,  # LSTM, GRU
-                    },
-                },
-            ],
+            # "type": "ConcatEncoder",
+            # "params": [
+            #     {
+            #         "type": "TransformerEncoder",
+            #         "params": {
+            #             "num_layers": 4,  # Transformer
+            #             "dropout": 0.25,  # Transformer
+            #             "d_model": 512,  # Transformer
+            #             "nhead": 8,  # Transformer
+            #         },
+            #     },
+            #     {
+            #         "type": "LSTMEncoder",
+            #         "params": {
+            #             "num_blocks": 4,  # LSTM, GRU
+            #             "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+            #             "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+            #             "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+            #             "bidirectional": False,  # LSTM, GRU
+            #         },
+            #     },
+            #     {
+            #         "type": "GRUEncoder",
+            #         "params": {
+            #             "num_blocks": 4,  # LSTM, GRU
+            #             "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+            #             "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+            #             "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+            #             "bidirectional": False,  # LSTM, GRU
+            #         },
+            #     },
+            # ],
         },
         "head": {
             "type": "MultiSampleDropoutHead",  # {SimpleHead, MultiSampleDropoutHead, AttentionHead, MeanMaxPoolingHead, LSTMHead, GRUHead, CNNHead}
@@ -374,7 +374,7 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 15,
+        "max_epochs": 20,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -422,7 +422,6 @@ PARAMS = {
             "rectify": True,
             "weight_decouple": True,
             "eps": 1.0e-16,
-            "print_change_log": False,
         },
     },
     "scheduler": {
@@ -442,7 +441,7 @@ PARAMS = {
         # },
         "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
         "params": {
-            "T_max": 15,
+            "T_max": 20,
             "verbose": False,
         },
     },
@@ -866,8 +865,7 @@ class AttentionHead(nn.Module):
         self.W = nn.Linear(in_features, hidden_size)
         self.V = nn.Linear(hidden_size, out_features)
 
-    def forward(self, last_hidden_state):
-        x = last_hidden_state[:, -1, :]
+    def forward(self, x):
         attention_scores = self.V(torch.tanh(self.W(x)))
         attention_scores = torch.softmax(attention_scores, dim=1)
         attentive_x = attention_scores * x

@@ -6,10 +6,7 @@ from pathlib import Path
 os.chdir("/workspaces/amex-default-prediction/work")
 
 experiment_run_ids = [
-    "0/1e0bfa22eacb4767ac3c5ec04cbbdd7b",
-    "0/c4e380ce15c845f59948c116deaa9754",
-    "0/fe661d3d02354259b8cd13b7e6e1357f",
-    "0/14ba6fc86d4f472badb4bed386c1e718",
+    "0/2c1b142665554faea89d5165a2876cf4",
     "2/895d05be47974f709f433457eddadbaf",
     "2/ad26ad078dd54a0b81f35a1682432e00",
 ]

@@ -24,7 +24,6 @@ import pickle
 import json
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler, scale
-from sklearn.impute import SimpleImputer
 import yaml
 
 from tqdm.auto import tqdm
@@ -753,6 +752,7 @@ def preprocess(df: pd.DataFrame):
     dropcols = [
         "R_1",
         "B_29",
+        "S_9",
     ]
     df.drop(columns=dropcols, inplace=True)
 
