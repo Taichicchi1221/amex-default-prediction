@@ -310,19 +310,19 @@ PARAMS = {
         "label_smoothing": 0.00,
         "encoder": {
             ### single encoder
-            "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            "type": "GRUEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
             "params": {
                 ##### Transformer
-                "num_layers": 4,  # Transformer
-                "dropout": 0.20,  # Transformer
-                "d_model": 512,  # Transformer
-                "nhead": 8,  # Transformer
+                # "num_layers": 4,  # Transformer
+                # "dropout": 0.20,  # Transformer
+                # "d_model": 512,  # Transformer
+                # "nhead": 8,  # Transformer
                 ##### LSTM, GRU
-                # "num_blocks": 4,  # LSTM, GRU
-                # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
-                # "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                # "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
-                # "bidirectional": False,  # LSTM, GRU
+                "num_blocks": 4,  # LSTM, GRU
+                "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+                "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+                "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+                "bidirectional": False,  # LSTM, GRU
                 ##### CNN
                 # "num_blocks": 4,  # CNN
                 # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # CNN, # len == encoder_num_blocks
@@ -412,7 +412,7 @@ PARAMS = {
     "optimizer": {
         "name": "torch.optim.AdamW",
         "params": {
-            "lr": 2.0e-05,
+            "lr": 1.0e-04,
             "weight_decay": 0.00,
         },
         # "name": "AdaBelief",
@@ -454,8 +454,6 @@ PARAMS = {
         #     "logits": True,
         #     "reduce": True,
         # },
-        # "name": "torchmetrics.HingeLoss",
-        # "params": {},
     },
 }
 
@@ -1000,6 +998,16 @@ class CNNEncoder(torch.nn.Module):
         return x
 
 
+class ResidualCNNEncoder(CNNEncoder):
+    def forward(self, x):
+        x = x.permute(0, 2, 1)
+        for encoder in self.encoders:
+            encoder_output = encoder(x)
+            x = x + encoder_output
+        x = x.permute(0, 2, 1)
+        return x
+
+
 class GRUEncoder(torch.nn.Module):
     def __init__(self, input_dim, params):
         super().__init__()
@@ -1026,6 +1034,14 @@ class GRUEncoder(torch.nn.Module):
         return x
 
 
+class ResidualGRUEncoder(GRUEncoder):
+    def forward(self, x):
+        for encoder in self.encoders:
+            encoder_output, _ = encoder(x)
+            x = x + encoder_output
+        return x
+
+
 class LSTMEncoder(torch.nn.Module):
     def __init__(self, input_dim, params):
         super().__init__()
@@ -1049,6 +1065,14 @@ class LSTMEncoder(torch.nn.Module):
     def forward(self, x):
         for encoder in self.encoders:
             x, _ = encoder(x)
+        return x
+
+
+class ResidualLSTMEncoder(LSTMEncoder):
+    def forward(self, x):
+        for encoder in self.encoders:
+            encoder_output, _ = encoder(x)
+            x = x + encoder_output
         return x
 
 

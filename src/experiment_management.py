@@ -29,8 +29,8 @@ MLFLOW_DIR = "../mlruns"
 #     "public_ids.npy",
 #     "private_ids.npy",
 # ]
-# EXPERIMENT_NAME = "exp039"
-# EXPERIMENT_DESC = "lgbmdart"
+# EXPERIMENT_NAME = "exp042"
+# EXPERIMENT_DESC = "lgbmdart + seed=2355"
 ########################## customer aggregation ##########################
 
 
@@ -51,7 +51,7 @@ MLFLOW_DIR = "../mlruns"
 #     "private_ids.npy",
 # ]
 # EXPERIMENT_NAME = "trn_exp001"
-# EXPERIMENT_DESC = "xgboost"
+# EXPERIMENT_DESC = "lgbmdart"
 ########################## customer aggregation ##########################
 
 ########################## sequential model ##############################
@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
     "public_ids.npy",
     "private_ids.npy",
 ]
-EXPERIMENT_NAME = "seq_exp032"
-EXPERIMENT_DESC = "ConcatEncoder + MeanMaxPoolingHead"
+EXPERIMENT_NAME = "seq_exp044"
+EXPERIMENT_DESC = "TransformerEncoder + MultiSampleDropoutHead"
 ########################## sequential model ##############################
 
 

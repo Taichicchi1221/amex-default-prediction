@@ -24,6 +24,7 @@ import pickle
 import json
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler, scale
+from sklearn.impute import SimpleImputer
 import yaml
 
 from tqdm.auto import tqdm
@@ -83,7 +84,7 @@ tqdm.pandas()
 # ====================================================
 DEBUG = False
 
-SEED = 42
+SEED = 1221
 N_SPLITS = 5
 
 
@@ -309,8 +310,8 @@ R_FEATURES = [
 PARAMS = {
     "type": "LightGBM",
     "metric_name": "amex",  # {amex, binary_logloss}
-    "num_boost_round": 10500,
-    "early_stopping_rounds": 10500,
+    "num_boost_round": 12000,
+    "early_stopping_rounds": 12000,
     "target_encoding": False,
     "seed": SEED,
     "n_splits": N_SPLITS,
@@ -752,7 +753,6 @@ def preprocess(df: pd.DataFrame):
     dropcols = [
         "R_1",
         "B_29",
-        "S_9",
     ]
     df.drop(columns=dropcols, inplace=True)
 
@@ -792,6 +792,7 @@ def aggregate_features(df):
             "max",
             "min",
             "std",
+            "first",
             "last",
         ]
         num_agg_result = df.groupby("customer_ID")[num_columns].agg(agg_names).astype(pd.Float32Dtype())
@@ -810,41 +811,103 @@ def aggregate_features(df):
         gc.collect()
 
         # diff_sum
-        last_diff1 = (df.groupby("customer_ID")[num_columns].nth(-1).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-2).fillna(0)).abs()
-        last_diff2 = (df.groupby("customer_ID")[num_columns].nth(-2).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-3).fillna(0)).abs()
-        last_diff3 = (df.groupby("customer_ID")[num_columns].nth(-3).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-4).fillna(0)).abs()
-        last_diff4 = (df.groupby("customer_ID")[num_columns].nth(-4).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-5).fillna(0)).abs()
-        last_diff5 = (df.groupby("customer_ID")[num_columns].nth(-5).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-6).fillna(0)).abs()
-        last_diff6 = (df.groupby("customer_ID")[num_columns].nth(-6).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-7).fillna(0)).abs()
-        last_diff7 = (df.groupby("customer_ID")[num_columns].nth(-7).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-8).fillna(0)).abs()
-        last_diff_sum3 = (last_diff1 + last_diff2 + last_diff3).add_suffix("-last_diff_sum3")
-        last_diff_sum5 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5).add_suffix("-last_diff_sum5")
-        last_diff_sum7 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5 + last_diff6 + last_diff7).add_suffix("-last_diff_sum7")
-        results.append(last_diff_sum3.sort_index())
-        results.append(last_diff_sum5.sort_index())
-        results.append(last_diff_sum7.sort_index())
-        del last_diff1, last_diff2, last_diff3, last_diff4, last_diff5
-        del last_diff_sum3, last_diff_sum5, last_diff_sum7
-        gc.collect()
+        # last_diff1 = (df.groupby("customer_ID")[num_columns].nth(-1).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-2).fillna(0)).abs()
+        # last_diff2 = (df.groupby("customer_ID")[num_columns].nth(-2).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-3).fillna(0)).abs()
+        # last_diff3 = (df.groupby("customer_ID")[num_columns].nth(-3).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-4).fillna(0)).abs()
+        # last_diff4 = (df.groupby("customer_ID")[num_columns].nth(-4).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-5).fillna(0)).abs()
+        # last_diff5 = (df.groupby("customer_ID")[num_columns].nth(-5).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-6).fillna(0)).abs()
+        # last_diff6 = (df.groupby("customer_ID")[num_columns].nth(-6).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-7).fillna(0)).abs()
+        # last_diff7 = (df.groupby("customer_ID")[num_columns].nth(-7).fillna(0) - df.groupby("customer_ID")[num_columns].nth(-8).fillna(0)).abs()
+        # last_diff_sum3 = (last_diff1 + last_diff2 + last_diff3).add_suffix("-last_diff_sum3")
+        # last_diff_sum5 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5).add_suffix("-last_diff_sum5")
+        # last_diff_sum7 = (last_diff1 + last_diff2 + last_diff3 + last_diff4 + last_diff5 + last_diff6 + last_diff7).add_suffix("-last_diff_sum7")
+        # results.append(last_diff_sum3.sort_index())
+        # results.append(last_diff_sum5.sort_index())
+        # results.append(last_diff_sum7.sort_index())
+        # del last_diff1, last_diff2, last_diff3, last_diff4, last_diff5
+        # del last_diff_sum3, last_diff_sum5, last_diff_sum7
+        # gc.collect()
 
-        # last - mean
+        # last - mean, max, min, std, first
         last_mean_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("mean")).add_suffix(
             "-last_mean_diff"
         )
         results.append(last_mean_diff.sort_index())
         del last_mean_diff
+
+        last_max_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("max")).add_suffix(
+            "-last_max_diff"
+        )
+        results.append(last_max_diff.sort_index())
+        del last_max_diff
+
+        last_min_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("min")).add_suffix(
+            "-last_min_diff"
+        )
+        results.append(last_min_diff.sort_index())
+        del last_min_diff
+
+        last_std_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("std")).add_suffix(
+            "-last_std_diff"
+        )
+        results.append(last_std_diff.sort_index())
+        del last_std_diff
+
+        last_first_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("first")).add_suffix(
+            "-last_first_diff"
+        )
+        results.append(last_first_diff.sort_index())
+        del last_first_diff
+
         gc.collect()
 
-        # last / mean
-        # last_mean_frac = (
-        #     (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("mean"))
-        #     .add_suffix("-last_mean_frac")
-        #     .replace([-np.inf, np.inf], pd.NA)
-        #     .astype(pd.Float32Dtype())
-        # )
-        # results.append(last_mean_frac.sort_index())
-        # del last_mean_frac
-        # gc.collect()
+        # last / mean, max, min, std, first
+        last_mean_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("mean"))
+            .add_suffix("-last_mean_frac")
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        results.append(last_mean_frac.sort_index())
+        del last_mean_frac
+
+        last_max_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("max"))
+            .add_suffix("-last_max_frac")
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        results.append(last_max_frac.sort_index())
+        del last_max_frac
+
+        last_min_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("min"))
+            .add_suffix("-last_min_frac")
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        results.append(last_min_frac.sort_index())
+        del last_min_frac
+
+        last_std_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("std"))
+            .add_suffix("-last_std_frac")
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        results.append(last_std_frac.sort_index())
+        del last_std_frac
+
+        last_first_frac = (
+            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("first"))
+            .add_suffix("-last_first_frac")
+            .replace([-np.inf, np.inf], pd.NA)
+            .astype(pd.Float32Dtype())
+        )
+        results.append(last_first_frac.sort_index())
+        del last_first_frac
+
+        gc.collect()
 
         # last - shift1
         last_diff = (df.groupby("customer_ID")[num_columns].nth(-1) - df.groupby("customer_ID")[num_columns].nth(-2)).add_suffix("-last_diff")
@@ -853,43 +916,14 @@ def aggregate_features(df):
         gc.collect()
 
         # last / shift1
-        last_frac = (
-            (df.groupby("customer_ID")[num_columns].nth(-1) / df.groupby("customer_ID")[num_columns].nth(-2))
-            .add_suffix("-last_frac")
-            .replace([-np.inf, np.inf], np.finfo(np.float32).max)
-            .astype(pd.Float32Dtype())
-        )
-        results.append(last_frac.sort_index())
-        del last_frac
-        gc.collect()
-
-        # last - first
-        last_first_diff = (df.groupby("customer_ID")[num_columns].agg("last") - df.groupby("customer_ID")[num_columns].agg("first")).add_suffix(
-            "-last_first_diff"
-        )
-        results.append(last_first_diff.sort_index())
-        del last_first_diff
-        gc.collect()
-
-        # last / first
-        last_first_frac = (
-            (df.groupby("customer_ID")[num_columns].agg("last") / df.groupby("customer_ID")[num_columns].agg("first"))
-            .replace([-np.inf, np.inf], pd.NA)
-            .astype(pd.Float32Dtype())
-        )
-        last_first_frac.columns = [f"{col}-last_first_frac" for col in num_columns]
-        results.append(last_first_frac.sort_index())
-        del last_first_frac
-        gc.collect()
-
-        # # left_std, right_std
-        # left_std = df.groupby("customer_ID")[num_columns].agg("mean") - df.groupby("customer_ID")[num_columns].agg("std")
-        # right_std = df.groupby("customer_ID")[num_columns].agg("mean") + df.groupby("customer_ID")[num_columns].agg("std")
-        # left_std.columns = [f"{col}-left_std" for col in num_columns]
-        # right_std.columns = [f"{col}-right_std" for col in num_columns]
-        # results.append(left_std.sort_index())
-        # results.append(right_std.sort_index())
-        # del left_std, right_std
+        # last_frac = (
+        #     (df.groupby("customer_ID")[num_columns].nth(-1) / df.groupby("customer_ID")[num_columns].nth(-2))
+        #     .add_suffix("-last_frac")
+        #     .replace([-np.inf, np.inf], np.finfo(np.float32).max)
+        #     .astype(pd.Float32Dtype())
+        # )
+        # results.append(last_frac.sort_index())
+        # del last_frac
         # gc.collect()
 
     # cat
@@ -898,6 +932,7 @@ def aggregate_features(df):
         agg_names = [
             "count",
             "nunique",
+            "first",
             "last",
         ]
         cat_agg_result = df.groupby("customer_ID")[cat_columns].agg(agg_names).astype(pd.Int8Dtype())
@@ -914,7 +949,7 @@ def aggregate_features(df):
         gc.collect()
 
         # define categorical features
-        cat_features = [f"{col}-last" for col in cat_columns]
+        cat_features = [f"{col}-last" for col in cat_columns] + [f"{col}-first" for col in cat_columns]
         num_features = [col for col in agg_result.columns if col not in cat_features]
 
     return agg_result, num_features, cat_features
@@ -923,8 +958,12 @@ def aggregate_features(df):
 def make_features(df, TYPE, num_features, cat_features):
     trace = Trace()
 
-    USE_NUM_COLS = [col for col in num_features if col.endswith("-mean") or col.endswith("-last") or col.endswith("-max") or col.endswith("-min")]
-    USE_CAT_COLS = [col for col in cat_features if col.endswith("-last")]
+    USE_NUM_COLS = [
+        col
+        for col in num_features
+        if col.endswith("-mean") or col.endswith("-last") or col.endswith("-first") or col.endswith("-max") or col.endswith("-min")
+    ]
+    USE_CAT_COLS = [col for col in cat_features if col.endswith("-last") or col.endswith("-first")]
 
     USE_COLS = USE_NUM_COLS + USE_CAT_COLS
 
@@ -1025,7 +1064,7 @@ def make_features(df, TYPE, num_features, cat_features):
     return df, num_features, cat_features
 
 
-def process_input(df, filename, num_features, cat_features):
+def process_input(df, filename, num_features, cat_features, TYPE):
     trace = Trace()
 
     # process nan values
@@ -1060,7 +1099,7 @@ def prepare_data(debug):
     print("#" * 10, "train", "#" * 10)
     train, num_features, cat_features = aggregate_features(train)
     train, num_features, cat_features = make_features(train, TYPE="train", num_features=num_features, cat_features=cat_features)
-    num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features)
+    num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features, TYPE="train")
 
     ### public
     public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
@@ -1079,7 +1118,7 @@ def prepare_data(debug):
     print("#" * 10, "public", "#" * 10)
     public, _, _ = aggregate_features(public)
     public, _, _ = make_features(public, TYPE="public", num_features=num_features, cat_features=cat_features)
-    _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features, TYPE="public")
 
     ### ptivate
     private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
@@ -1098,7 +1137,7 @@ def prepare_data(debug):
     print("#" * 10, "private", "#" * 10)
     private, _, _ = aggregate_features(private)
     private, _, _ = make_features(private, TYPE="private", num_features=num_features, cat_features=cat_features)
-    _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features, TYPE="private")
 
     ### labels
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
@@ -1237,37 +1276,54 @@ def training_main():
 
 
 def inference_main():
-    public_ids = np.load("public_ids.npy", allow_pickle=True)
-    private_ids = np.load("private_ids.npy", allow_pickle=True)
-    public = pd.read_pickle("public.pkl")
-    private = pd.read_pickle("private.pkl")
     num_features = joblib.load("num_features.pkl")
     cat_features = joblib.load("cat_features.pkl")
 
+    # public
+    public_ids = np.load("public_ids.npy", allow_pickle=True)
+    public = pd.read_pickle("public.pkl")
     public_predictions = []
-    private_predictions = []
+
     for fold in range(N_SPLITS):
         model = get_model(PARAMS)
         model.load(f"model_fold{fold}.pkl")
 
         public_predictions.append(model.inference(public))
-        private_predictions.append(model.inference(private))
 
-    # test
     public_prediction = np.mean(np.stack(public_predictions, axis=1), axis=1)
-    private_prediction = np.mean(np.stack(private_predictions, axis=1), axis=1)
+
     public_df = pd.DataFrame(
         {
             "customer_ID": public.index,
             "prediction": public_prediction,
         }
     )
+    del public
+    gc.collect()
+
+    # private
+    private_ids = np.load("private_ids.npy", allow_pickle=True)
+    private = pd.read_pickle("private.pkl")
+    private_predictions = []
+
+    for fold in range(N_SPLITS):
+        model = get_model(PARAMS)
+        model.load(f"model_fold{fold}.pkl")
+
+        private_predictions.append(model.inference(private))
+
+    private_prediction = np.mean(np.stack(private_predictions, axis=1), axis=1)
+
     private_df = pd.DataFrame(
         {
             "customer_ID": private.index,
             "prediction": private_prediction,
         }
     )
+    del private
+    gc.collect()
+
+    # test
     plot_distribution(public_df["prediction"], path="public_distribution.png")
     plot_distribution(private_df["prediction"], path="private_distribution.png")
     test_df = pd.concat([public_df, private_df], axis=0).reset_index(drop=True)

@@ -239,16 +239,16 @@ R_FEATURES = [
 PARAMS = {
     "type": "LightGBM",
     "metric_name": "amex",  # {amex, binary_logloss}
-    "num_boost_round": 10500,
-    "early_stopping_rounds": 1500,
+    "num_boost_round": 10000,
+    "early_stopping_rounds": 10000,
     "target_encoding": False,
     "seed": SEED,
     "n_splits": N_SPLITS,
     "params": {
         "objective": "binary",
         "metric": "binary_logloss",
-        "boosting_type": "gbdt",  # {gbdt, dart}
-        "learning_rate": 0.01,
+        "boosting_type": "dart",  # {gbdt, dart}
+        "learning_rate": 0.03,
         "num_leaves": 100,
         "min_data_in_leaf": 40,
         "reg_alpha": 0.0,
@@ -277,11 +277,9 @@ PARAMS = {
 #         "objective": "binary:logitraw",
 #         "booster": "gbtree",
 #         "learning_rate": 0.03,
-#         "max_depth": 8,
-#         "subsample": 0.8,
+#         "max_depth": 4,
+#         "subsample": 0.6,
 #         "colsample_bytree": 0.5,
-#         "reg_lambda": 2.0,
-#         "reg_alpha": 1.0,
 #         "disable_default_eval_metric": "true",
 #         "tree_method": "gpu_hist",
 #         "predictor": "gpu_predictor",
@@ -381,7 +379,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "train", "#" * 10)
     train, num_features, cat_features = transpose_features(train)
-    num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features)
+    num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features, TYPE="train")
 
     ### public
     public_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "public.npy"), allow_pickle=True)
@@ -399,7 +397,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "public", "#" * 10)
     public, _, _ = transpose_features(public)
-    _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features, TYPE="public")
 
     ### ptivate
     private_ids = np.load(Path(INPUT_CUSTOMER_IDS_DIR, "private.npy"), allow_pickle=True)
@@ -417,7 +415,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "private", "#" * 10)
     private, _, _ = transpose_features(private)
-    _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features)
+    _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features, TYPE="private")
 
     ### labels
     train_labels = pd.read_csv(Path(INPUT_DIR, "train_labels.csv"), dtype={"target": "uint8"})
@@ -439,8 +437,8 @@ def prepare_data(debug):
 def main():
     seed_everything(SEED)
     prepare_data(DEBUG)
-    oof_score, g, d = training_main()
-    inference_main()
+    oof_score, g, d = training_main(PARAMS)
+    inference_main(PARAMS)
 
     return Box(
         {

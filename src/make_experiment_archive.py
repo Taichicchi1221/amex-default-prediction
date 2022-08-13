@@ -7,8 +7,12 @@ os.chdir("/workspaces/amex-default-prediction/work")
 
 experiment_run_ids = [
     "0/2c1b142665554faea89d5165a2876cf4",
+    "0/1e0bfa22eacb4767ac3c5ec04cbbdd7b",
+    "0/c778d2c6a263487a875e22b1009403d8",
+    "0/8d41275b922a4cb8ab5396394baaf2f9",
     "2/895d05be47974f709f433457eddadbaf",
     "2/ad26ad078dd54a0b81f35a1682432e00",
+    "2/0cdebde31d594d5f8d33b4876c9fb9c6",
 ]
 
 shutil.rmtree("../experiments")

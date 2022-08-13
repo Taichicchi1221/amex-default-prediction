@@ -374,7 +374,7 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 15,
+        "max_epochs": 30,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -434,17 +434,17 @@ PARAMS = {
         #     "eps": 1.0e-06,  # ReduceLROnPlateau
         #     "verbose": True,
         # },
-        # "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
-        # "params": {
-        #     "T_0": 1,
-        #     "T_mult": 2,
-        #     "verbose": False,
-        # },
-        "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
+        "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
         "params": {
-            "T_max": 15,
+            "T_0": 1,
+            "T_mult": 2,
             "verbose": False,
         },
+        # "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
+        # "params": {
+        #     "T_max": 15,
+        #     "verbose": False,
+        # },
     },
     "loss": {
         "name": "nn.BCEWithLogitsLoss",
@@ -454,8 +454,6 @@ PARAMS = {
         #     "logits": True,
         #     "reduce": True,
         # },
-        # "name": "torchmetrics.HingeLoss",
-        # "params": {},
     },
 }
 

@@ -84,7 +84,7 @@ tqdm.pandas()
 # ====================================================
 DEBUG = False
 
-SEED = 2355
+SEED = 5
 N_SPLITS = 5
 
 
@@ -307,57 +307,57 @@ R_FEATURES = [
     "R_28",
 ]
 
-# PARAMS = {
-#     "type": "LightGBM",
-#     "metric_name": "amex",  # {amex, binary_logloss}
-#     "num_boost_round": 12000,
-#     "early_stopping_rounds": 12000,
-#     "target_encoding": False,
-#     "seed": SEED,
-#     "n_splits": N_SPLITS,
-#     "params": {
-#         "objective": "binary",
-#         "metric": "binary_logloss",
-#         "boosting_type": "dart",  # {gbdt, dart}
-#         "learning_rate": 0.01,
-#         "num_leaves": 100,
-#         "min_data_in_leaf": 40,
-#         "reg_alpha": 0.0,
-#         "reg_lambda": 2.0,
-#         "feature_fraction": 0.20,
-#         "bagging_freq": 10,
-#         "bagging_fraction": 0.50,
-#         "seed": SEED,
-#         "bagging_seed": SEED,
-#         "feature_fraction_seed": SEED,
-#         "verbose": -1,
-#         "n_jobs": -1,
-#     },
-# }
-
-
 PARAMS = {
-    "type": "XGBoost",
-    "metric_name": "amex",  # {amex, logloss}
-    "num_boost_round": 10000,
-    "early_stopping_rounds": 10000,
+    "type": "LightGBM",
+    "metric_name": "amex",  # {amex, binary_logloss}
+    "num_boost_round": 12000,
+    "early_stopping_rounds": 12000,
     "target_encoding": False,
     "seed": SEED,
     "n_splits": N_SPLITS,
     "params": {
-        "objective": "binary:logitraw",
-        "booster": "gbtree",
-        "learning_rate": 0.03,
-        "max_depth": 4,
-        "subsample": 0.6,
-        "colsample_bytree": 0.5,
-        "disable_default_eval_metric": "true",
-        "tree_method": "gpu_hist",
-        "predictor": "gpu_predictor",
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "boosting_type": "dart",  # {gbdt, dart}
+        "learning_rate": 0.01,
+        "num_leaves": 100,
+        "min_data_in_leaf": 40,
+        "reg_alpha": 0.0,
+        "reg_lambda": 2.0,
+        "feature_fraction": 0.20,
+        "bagging_freq": 10,
+        "bagging_fraction": 0.50,
+        "seed": SEED,
+        "bagging_seed": SEED,
+        "feature_fraction_seed": SEED,
+        "verbose": -1,
         "n_jobs": -1,
-        "random_state": SEED,
     },
 }
+
+
+# PARAMS = {
+#     "type": "XGBoost",
+#     "metric_name": "amex",  # {amex, logloss}
+#     "num_boost_round": 10000,
+#     "early_stopping_rounds": 10000,
+#     "target_encoding": False,
+#     "seed": SEED,
+#     "n_splits": N_SPLITS,
+#     "params": {
+#         "objective": "binary:logitraw",
+#         "booster": "gbtree",
+#         "learning_rate": 0.03,
+#         "max_depth": 4,
+#         "subsample": 0.6,
+#         "colsample_bytree": 0.5,
+#         "disable_default_eval_metric": "true",
+#         "tree_method": "gpu_hist",
+#         "predictor": "gpu_predictor",
+#         "n_jobs": -1,
+#         "random_state": SEED,
+#     },
+# }
 
 
 # ====================================================
@@ -1098,7 +1098,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "train", "#" * 10)
     train, num_features, cat_features = aggregate_features(train)
-    # train, num_features, cat_features = make_features(train, TYPE="train", num_features=num_features, cat_features=cat_features)
+    train, num_features, cat_features = make_features(train, TYPE="train", num_features=num_features, cat_features=cat_features)
     num_features, cat_features = process_input(train, filename="train.pkl", num_features=num_features, cat_features=cat_features, TYPE="train")
 
     ### public
@@ -1117,7 +1117,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "public", "#" * 10)
     public, _, _ = aggregate_features(public)
-    # public, _, _ = make_features(public, TYPE="public", num_features=num_features, cat_features=cat_features)
+    public, _, _ = make_features(public, TYPE="public", num_features=num_features, cat_features=cat_features)
     _, _ = process_input(public, filename="public.pkl", num_features=num_features, cat_features=cat_features, TYPE="public")
 
     ### ptivate
@@ -1136,7 +1136,7 @@ def prepare_data(debug):
     # main process
     print("#" * 10, "private", "#" * 10)
     private, _, _ = aggregate_features(private)
-    # private, _, _ = make_features(private, TYPE="private", num_features=num_features, cat_features=cat_features)
+    private, _, _ = make_features(private, TYPE="private", num_features=num_features, cat_features=cat_features)
     _, _ = process_input(private, filename="private.pkl", num_features=num_features, cat_features=cat_features, TYPE="private")
 
     ### labels
@@ -1160,7 +1160,6 @@ def prepare_data(debug):
 # training
 # ====================================================
 def train_fold(
-    params,
     fold,
     X_train,
     y_train,
@@ -1172,7 +1171,7 @@ def train_fold(
     cat_features,
 ):
     trace = Trace()
-    model = get_model(params)
+    model = get_model(PARAMS)
 
     # train
     with trace.timer(f"training fold{fold}"):
@@ -1204,7 +1203,7 @@ def train_fold(
     return oof_preds
 
 
-def training_main(params):
+def training_main():
     train_ids = np.load("train_ids.npy", allow_pickle=True)
     train_labels = pd.read_pickle("train_labels.pkl")
     num_features = joblib.load("num_features.pkl")
@@ -1233,7 +1232,6 @@ def training_main(params):
         print(f"X_train.shape={X_train.shape}, X_valid.shape={X_valid.shape}")
 
         prediction = train_fold(
-            params,
             fold,
             X_train,
             y_train,
@@ -1277,7 +1275,7 @@ def training_main(params):
     return oof_score, g, d
 
 
-def inference_main(params):
+def inference_main():
     num_features = joblib.load("num_features.pkl")
     cat_features = joblib.load("cat_features.pkl")
 
@@ -1287,7 +1285,7 @@ def inference_main(params):
     public_predictions = []
 
     for fold in range(N_SPLITS):
-        model = get_model(params)
+        model = get_model(PARAMS)
         model.load(f"model_fold{fold}.pkl")
 
         public_predictions.append(model.inference(public))
@@ -1309,7 +1307,7 @@ def inference_main(params):
     private_predictions = []
 
     for fold in range(N_SPLITS):
-        model = get_model(params)
+        model = get_model(PARAMS)
         model.load(f"model_fold{fold}.pkl")
 
         private_predictions.append(model.inference(private))
@@ -1335,8 +1333,8 @@ def inference_main(params):
 def main():
     seed_everything(SEED)
     prepare_data(DEBUG)
-    oof_score, g, d = training_main(PARAMS)
-    inference_main(PARAMS)
+    oof_score, g, d = training_main()
+    inference_main()
 
     return Box(
         {

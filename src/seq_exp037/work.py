@@ -314,7 +314,7 @@ PARAMS = {
             "params": {
                 ##### Transformer
                 "num_layers": 4,  # Transformer
-                "dropout": 0.20,  # Transformer
+                "dropout": 0.25,  # Transformer
                 "d_model": 512,  # Transformer
                 "nhead": 8,  # Transformer
                 ##### LSTM, GRU
@@ -374,11 +374,11 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 15,
+        "max_epochs": 20,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
-        "accumulate_grad_batches": 4,
+        "accumulate_grad_batches": 2,
         "precision": 16,
         "gpus": 1,
     },
@@ -434,17 +434,17 @@ PARAMS = {
         #     "eps": 1.0e-06,  # ReduceLROnPlateau
         #     "verbose": True,
         # },
-        # "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
-        # "params": {
-        #     "T_0": 1,
-        #     "T_mult": 2,
-        #     "verbose": False,
-        # },
-        "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
+        "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
         "params": {
-            "T_max": 15,
+            "T_0": 3,
+            "T_mult": 2,
             "verbose": False,
         },
+        # "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
+        # "params": {
+        #     "T_max": 15,
+        #     "verbose": False,
+        # },
     },
     "loss": {
         "name": "nn.BCEWithLogitsLoss",
@@ -454,8 +454,6 @@ PARAMS = {
         #     "logits": True,
         #     "reduce": True,
         # },
-        # "name": "torchmetrics.HingeLoss",
-        # "params": {},
     },
 }
 

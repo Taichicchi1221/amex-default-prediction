@@ -1,0 +1,1 @@
+TransformerEncoder + MultiSampleDropoutHead + batch_size=256
