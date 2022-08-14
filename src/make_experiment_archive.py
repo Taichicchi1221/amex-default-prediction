@@ -10,9 +10,12 @@ experiment_run_ids = [
     "0/1e0bfa22eacb4767ac3c5ec04cbbdd7b",
     "0/c778d2c6a263487a875e22b1009403d8",
     "0/8d41275b922a4cb8ab5396394baaf2f9",
+    "0/14ba6fc86d4f472badb4bed386c1e718",
     "2/895d05be47974f709f433457eddadbaf",
     "2/ad26ad078dd54a0b81f35a1682432e00",
     "2/0cdebde31d594d5f8d33b4876c9fb9c6",
+    "2/e6318d18be3547edbd7c137cb0b86a42",
+    "3/89b345229e9d4fb283f50fda2850a24f",
 ]
 
 shutil.rmtree("../experiments")

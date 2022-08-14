@@ -14,30 +14,9 @@ import mlflow
 MLFLOW_DIR = "../mlruns"
 
 ########################## customer aggregation ##########################
-# WORKFILE_NAME = "customer_aggregation_work.py"
-# DEPENDENT_FILES = ["utils.py"]
-# MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
-# WORKFILE_TO_CLEAR = [
-#     "train.pkl",
-#     "train_labels.pkl",
-#     "public.pkl",
-#     "private.pkl",
-#     "additive_features.pkl",
-#     "num_features.pkl",
-#     "cat_features.pkl",
-#     "train_ids.npy",
-#     "public_ids.npy",
-#     "private_ids.npy",
-# ]
-# EXPERIMENT_NAME = "exp042"
-# EXPERIMENT_DESC = "lgbmdart + seed=2355"
-########################## customer aggregation ##########################
-
-
-########################## customer transpose ##########################
-WORKFILE_NAME = "customer_transpose_work.py"
-DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
-MLFLOW_EXPERIMENT = "CUSTOMER_ID_TRANSPOSE"
+WORKFILE_NAME = "customer_aggregation_work.py"
+DEPENDENT_FILES = ["utils.py"]
+MLFLOW_EXPERIMENT = "CUSTOMER_ID_AGGREGATION"
 WORKFILE_TO_CLEAR = [
     "train.pkl",
     "train_labels.pkl",
@@ -50,8 +29,29 @@ WORKFILE_TO_CLEAR = [
     "public_ids.npy",
     "private_ids.npy",
 ]
-EXPERIMENT_NAME = "trn_exp001"
-EXPERIMENT_DESC = "lgbmdart"
+EXPERIMENT_NAME = "exp042"
+EXPERIMENT_DESC = "lgbmdart + seed=2355"
+########################## customer aggregation ##########################
+
+
+########################## customer transpose ##########################
+# WORKFILE_NAME = "customer_transpose_work.py"
+# DEPENDENT_FILES = ["utils.py", "customer_aggregation_work.py"]
+# MLFLOW_EXPERIMENT = "CUSTOMER_ID_TRANSPOSE"
+# WORKFILE_TO_CLEAR = [
+#     "train.pkl",
+#     "train_labels.pkl",
+#     "public.pkl",
+#     "private.pkl",
+#     "additive_features.pkl",
+#     "num_features.pkl",
+#     "cat_features.pkl",
+#     "train_ids.npy",
+#     "public_ids.npy",
+#     "private_ids.npy",
+# ]
+# EXPERIMENT_NAME = "trn_exp001"
+# EXPERIMENT_DESC = "lgbmdart"
 ########################## customer aggregation ##########################
 
 ########################## sequential model ##############################
