@@ -310,7 +310,7 @@ PARAMS = {
         "label_smoothing": 0.10,
         "encoder": {
             ### single encoder
-            "type": "GRUEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            "type": "LSTMEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
             "params": {
                 ##### Transformer
                 # "num_layers": 4,  # Transformer
@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {

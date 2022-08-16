@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {

@@ -83,7 +83,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 30
+N_SPLITS = 50
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {

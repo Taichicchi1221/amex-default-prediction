@@ -83,7 +83,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 30
+N_SPLITS = 10
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -374,7 +374,7 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 30,
+        "max_epochs": 20,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {
@@ -436,7 +436,7 @@ PARAMS = {
         # },
         "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
         "params": {
-            "T_0": 1,
+            "T_0": 3,
             "T_mult": 2,
             "verbose": False,
         },

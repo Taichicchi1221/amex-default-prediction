@@ -310,19 +310,19 @@ PARAMS = {
         "label_smoothing": 0.10,
         "encoder": {
             ### single encoder
-            "type": "GRUEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            "type": "TransformerEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
             "params": {
                 ##### Transformer
-                # "num_layers": 4,  # Transformer
-                # "dropout": 0.25,  # Transformer
-                # "d_model": 512,  # Transformer
-                # "nhead": 8,  # Transformer
+                "num_layers": 4,  # Transformer
+                "dropout": 0.25,  # Transformer
+                "d_model": 512,  # Transformer
+                "nhead": 8,  # Transformer
                 ##### LSTM, GRU
-                "num_blocks": 4,  # LSTM, GRU
-                "dropout_list": [0.00, 0.00, 0.00, 0.00],  # LSTM, GRU, # len == encoder_num_blocks
-                "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
-                "num_layers_list": [1, 1, 1, 1],  # LSTM, GRU, len == encoder_num_blocks
-                "bidirectional": False,  # LSTM, GRU
+                # "num_blocks": 4,  # LSTM, GRU
+                # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # LSTM, GRU, # len == encoder_num_blocks
+                # "hidden_size_list": [1024, 512, 256, 128],  # LSTM, GRU, # len == encoder_num_blocks
+                # "num_layers_list": [4, 4, 4, 4],  # LSTM, GRU, len == encoder_num_blocks
+                # "bidirectional": False,  # LSTM, GRU
                 ##### CNN
                 # "num_blocks": 4,  # CNN
                 # "dropout_list": [0.10, 0.10, 0.10, 0.10],  # CNN, # len == encoder_num_blocks
@@ -374,7 +374,7 @@ PARAMS = {
         },
     },
     "trainer": {
-        "max_epochs": 30,
+        "max_epochs": 20,
         "benchmark": False,
         "deterministic": True,
         "num_sanity_val_steps": 0,
@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {
@@ -436,7 +436,7 @@ PARAMS = {
         # },
         "name": "torch.optim.lr_scheduler.CosineAnnealingWarmRestarts",
         "params": {
-            "T_0": 1,
+            "T_0": 3,
             "T_mult": 2,
             "verbose": False,
         },

@@ -83,7 +83,7 @@ tqdm.pandas()
 DEBUG = False
 
 SEED = 42
-N_SPLITS = 30
+N_SPLITS = 10
 
 INPUT_DIR = "../input/amex-default-prediction"
 INPUT_PICKLE_DIR = "../input/amex-pickle"
@@ -310,7 +310,7 @@ PARAMS = {
         "label_smoothing": 0.10,
         "encoder": {
             ### single encoder
-            "type": "GRUEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
+            "type": "LSTMEncoder",  # {TransformerEncoder, GRUEncoder, LSTMEncoder, CNNEncoder}
             "params": {
                 ##### Transformer
                 # "num_layers": 4,  # Transformer
@@ -383,7 +383,7 @@ PARAMS = {
         "gpus": 1,
     },
     "mixup": {
-        "use": True,
+        "use": False,
         "alpha": 0.5,
     },
     "dataloader": {
