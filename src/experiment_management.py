@@ -29,8 +29,8 @@ MLFLOW_DIR = "../mlruns"
 #     "public_ids.npy",
 #     "private_ids.npy",
 # ]
-# EXPERIMENT_NAME = "exp042"
-# EXPERIMENT_DESC = "lgbmdart + seed=2355"
+# EXPERIMENT_NAME = "exp043"
+# EXPERIMENT_DESC = "lgbmdart + focal_loss + seed=2355"
 ########################## customer aggregation ##########################
 
 
@@ -69,8 +69,8 @@ WORKFILE_TO_CLEAR = [
     "public_ids.npy",
     "private_ids.npy",
 ]
-EXPERIMENT_NAME = "seq_exp054"
-EXPERIMENT_DESC = "GRUEncoder + MultiSampleDropoutHead + 30fold + mixup (for ensemble)"
+EXPERIMENT_NAME = "seq_exp056"
+EXPERIMENT_DESC = "GRUEncoder + MultiSampleDropoutHead + 30fold(for ensemble)"
 ########################## sequential model ##############################
 
 
